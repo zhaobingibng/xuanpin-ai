@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from loguru import logger
 
 from app.api.assistant import router as assistant_router
+from app.api.ai_analysis import router as ai_analysis_router
 from app.api.crawler import router as crawler_router
 from app.api.dashboard import router as dashboard_router
 from app.api.knowledge import router as knowledge_router
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="xuanpin-ai API", lifespan=lifespan)
 
 app.include_router(assistant_router)
+app.include_router(ai_analysis_router)
 app.include_router(crawler_router)
 app.include_router(dashboard_router)
 app.include_router(knowledge_router)

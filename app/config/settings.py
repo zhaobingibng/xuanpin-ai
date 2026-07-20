@@ -28,10 +28,10 @@ class AppSettings(BaseSettings):
     # Database (SQLite)
     db_path: str = "./storage/xuanpin.db"
 
-    # AI / LLM
+    # AI / LLM (OpenAI-compatible: DeepSeek / Qwen / GPT)
     ai_api_key: str = ""
-    ai_model: str = "gpt-4"
-    ai_base_url: str = "https://api.openai.com/v1"
+    ai_model: str = "deepseek-chat"
+    ai_base_url: str = "https://api.deepseek.com"
 
     # Browser
     browser_headless: bool = True
