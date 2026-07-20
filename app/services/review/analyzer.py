@@ -19,7 +19,7 @@ class RecommendationReviewService:
 
     闭环流程：推荐 → 销售变化 → 效果判断 → 反馈分析
 
-    判断规则（基于推荐后 7 天 ProductHistory）：
+    判断规则（基于推荐后 3 天 ProductHistory）：
       - SUCCESS: 销量增长 >=30% 或 trend_score 提升 >=20
       - FAILED:  销量下降 >30% 或 趋势明显下降 (trend_change <= -20)
       - NORMAL:  其他
@@ -56,7 +56,7 @@ class RecommendationReviewService:
             }
         """
         if review_date is None:
-            review_date = date.today() - timedelta(days=7)
+            review_date = date.today() - timedelta(days=3)
 
         # 查找该日期的推荐报告
         report = await self._report_repo.find_by_date(review_date)

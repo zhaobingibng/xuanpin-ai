@@ -132,8 +132,10 @@ class TestAnalyzeProducts:
         mock_session.rollback = AsyncMock()
         mock_session.refresh = AsyncMock()
 
-        # Mock the query result for trend analysis
+        # Mock the query result: scalar_one_or_none returns None (no existing record)
+        # so upsert creates new products and history snapshots are not skipped
         mock_query_result = MagicMock()
+        mock_query_result.scalar_one_or_none.return_value = None
         mock_query_result.scalars.return_value.all.return_value = []
         mock_session.execute = AsyncMock(return_value=mock_query_result)
 
@@ -142,6 +144,7 @@ class TestAnalyzeProducts:
         assert result["raw_count"] == 2
         assert result["cleaned_count"] == 2
         assert result["saved_count"] == 2
+        assert result["new_count"] == 2
         assert result["history_count"] == 2
 
     @pytest.mark.asyncio
@@ -159,6 +162,7 @@ class TestAnalyzeProducts:
         mock_session.refresh = AsyncMock()
 
         mock_query_result = MagicMock()
+        mock_query_result.scalar_one_or_none.return_value = None
         mock_query_result.scalars.return_value.all.return_value = []
         mock_session.execute = AsyncMock(return_value=mock_query_result)
 

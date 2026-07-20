@@ -9,6 +9,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.history_repository import HistoryRepository
+from app.database.knowledge_repository import KnowledgeRepository
 from app.database.recommendation_repository import RecommendationRepository
 from app.services.analytics.analyzer import TrendAnalyzer
 from app.services.competition.analyzer import CompetitionAnalyzer
@@ -38,6 +39,7 @@ class DailyRecommendationService:
         self._product_service = ProductService(session)
         self._history_repo = HistoryRepository(session)
         self._recommendation_repo = RecommendationRepository(session)
+        self._knowledge_repo = KnowledgeRepository(session)
         self._scorer = ProductScorer()
         self._lifecycle = LifecycleAnalyzer(session)
         self._competition = CompetitionAnalyzer(session)
@@ -97,6 +99,7 @@ class DailyRecommendationService:
                 "market_level": competition_result["market_level"],
                 "decision": decision_result,
                 "trend_score": trend_score,
+                "knowledge_tags": await self._knowledge_repo.get_product_tags(product.id),
             })
 
         # 7. 排序

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Any, Sequence
 
 from loguru import logger
 from sqlalchemy import select
@@ -28,30 +28,42 @@ class ProductService:
 
     async def save_raw_products(
         self, products: list[RawProduct]
-    ) -> int:
+    ) -> dict[str, Any]:
         """Clean raw products and persist them to the database.
 
         Flow: RawProduct → CleanPipeline → Repository.upsert → DB.
 
         Returns:
-            The number of products successfully saved (new + updated).
+            Dict with detailed stats and saved products:
+            {"total": int, "cleaned_count": int, "saved_count": int,
+             "new_count": int, "updated_count": int, "history_count": int,
+             "failed_count": int, "saved_products": list[Product]}
         """
         total = len(products)
         logger.info("开始保存商品: 输入数量={}", total)
 
+        empty_result: dict[str, Any] = {
+            "total": total, "cleaned_count": 0, "saved_count": 0,
+            "new_count": 0, "updated_count": 0, "history_count": 0,
+            "failed_count": 0, "saved_products": [],
+        }
         if total == 0:
-            return 0
+            return empty_result
 
         # Step 1: clean + classify + batch-dedup
         cleaned = self._pipeline.process_batch(products)
         cleaned_count = len(cleaned)
         logger.info("清洗完成: 清洗数量={}", cleaned_count)
 
+        if cleaned_count == 0:
+            return empty_result
+
         # Step 2: upsert each cleaned product + history snapshot
         new_count = 0
         updated_count = 0
         failed_count = 0
         history_count = 0
+        saved_products: list[Product] = []
 
         for item in cleaned:
             try:
@@ -61,6 +73,7 @@ class ProductService:
                     new_count += 1
                 else:
                     updated_count += 1
+                saved_products.append(product)
 
                 # Step 3: create history snapshot
                 snapshot = await self._history_repo.create_snapshot(product)
@@ -70,16 +83,35 @@ class ProductService:
                 failed_count += 1
                 logger.warning("保存商品失败: {}", e)
 
-        await self._session.commit()
+        try:
+            await self._session.commit()
+            # Refresh products to get DB-generated IDs
+            for p in saved_products:
+                await self._session.refresh(p)
+        except Exception as e:
+            logger.error("提交失败: {}", e)
+            await self._session.rollback()
+            return {
+                "total": total, "cleaned_count": cleaned_count, "saved_count": 0,
+                "new_count": 0, "updated_count": 0, "history_count": 0,
+                "failed_count": cleaned_count, "saved_products": [],
+            }
 
+        saved_count = new_count + updated_count
         logger.info(
             "保存完成: 新增={}, 更新={}, 历史={}, 失败={}",
-            new_count,
-            updated_count,
-            history_count,
-            failed_count,
+            new_count, updated_count, history_count, failed_count,
         )
-        return new_count + updated_count
+        return {
+            "total": total,
+            "cleaned_count": cleaned_count,
+            "saved_count": saved_count,
+            "new_count": new_count,
+            "updated_count": updated_count,
+            "history_count": history_count,
+            "failed_count": failed_count,
+            "saved_products": saved_products,
+        }
 
     # ── Create ────────────────────────────────────────────────
 
@@ -102,11 +134,22 @@ class ProductService:
         *,
         platform: str | None = None,
         shop: str | None = None,
+        status: str | None = "ACTIVE",
         limit: int = 100,
         offset: int = 0,
     ) -> Sequence[Product]:
-        """List products with optional filters and pagination."""
+        """List products with optional filters and pagination.
+
+        Args:
+            platform: 平台筛选。
+            shop: 店铺筛选。
+            status: 状态筛选，默认 "ACTIVE"，None 表示不过滤。
+            limit: 分页大小。
+            offset: 分页偏移。
+        """
         stmt = select(Product)
+        if status is not None:
+            stmt = stmt.where(Product.status == status)
         if platform:
             stmt = stmt.where(Product.platform == platform)
         if shop:

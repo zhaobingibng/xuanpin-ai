@@ -62,6 +62,9 @@ def _patch_all(
 
     mock_rec_repo = AsyncMock()
 
+    mock_knowledge_repo = AsyncMock()
+    mock_knowledge_repo.get_product_tags.return_value = []
+
     mock_trend = MagicMock()
     mock_trend_instance = MagicMock()
     mock_trend_instance.calculate_trend_score.return_value = {"trend_score": trend_score}
@@ -95,6 +98,10 @@ def _patch_all(
         patch(
             "app.services.recommendation.daily_recommendation.RecommendationRepository",
             return_value=mock_rec_repo,
+        ),
+        patch(
+            "app.services.recommendation.daily_recommendation.KnowledgeRepository",
+            return_value=mock_knowledge_repo,
         ),
         patch(
             "app.services.recommendation.daily_recommendation.TrendAnalyzer",

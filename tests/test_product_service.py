@@ -168,7 +168,7 @@ class TestSaveRawProducts:
         raws = [_raw()]
         count = await svc.save_raw_products(raws)
 
-        assert count == 1
+        assert count["saved_count"] == 1
         all_products = await svc.list_all()
         assert len(all_products) == 1
         p = all_products[0]
@@ -185,14 +185,14 @@ class TestSaveRawProducts:
         ]
         count = await svc.save_raw_products(raws)
 
-        assert count == 3
+        assert count["saved_count"] == 3
         all_products = await svc.list_all()
         assert len(all_products) == 3
 
     async def test_empty_list_returns_zero(self, async_session):
         svc = ProductService(async_session)
         count = await svc.save_raw_products([])
-        assert count == 0
+        assert count["saved_count"] == 0
 
     async def test_url_dedup_updates_existing(self, async_session):
         svc = ProductService(async_session)
@@ -205,7 +205,7 @@ class TestSaveRawProducts:
         raws2 = [_raw(name="蓝牙耳机V2", price=199.0, url="https://xhslink.com/p/1")]
         count = await svc.save_raw_products(raws2)
 
-        assert count == 1  # 1 updated
+        assert count["saved_count"] == 1  # 1 updated
         all_products = await svc.list_all()
         assert len(all_products) == 1
         # Should be updated to V2
@@ -223,7 +223,7 @@ class TestSaveRawProducts:
         raws2 = [_raw(name="水杯保温", url=None, price=39.9, shop="家居店")]
         count = await svc.save_raw_products(raws2)
 
-        assert count == 1  # 1 updated
+        assert count["saved_count"] == 1  # 1 updated
         all_products = await svc.list_all()
         assert len(all_products) == 1
         assert all_products[0].price == 39.9
@@ -237,7 +237,7 @@ class TestSaveRawProducts:
         ]
         count = await svc.save_raw_products(raws)
 
-        assert count == 2
+        assert count["saved_count"] == 2
         all_products = await svc.list_all()
         assert len(all_products) == 2
 
@@ -283,7 +283,7 @@ class TestSaveRawProducts:
         count = await svc.save_raw_products(raws)
 
         # Pipeline dedup by (name, shop, platform) removes the second
-        assert count == 1
+        assert count["saved_count"] == 1
 
     async def test_cross_call_upsert_by_url(self, async_session):
         """Two separate save calls with same URL → one record in DB."""
@@ -305,6 +305,6 @@ class TestSaveRawProducts:
         ]
         count = await svc.save_raw_products(raws)
 
-        assert count == 2
+        assert count["saved_count"] == 2
         all_products = await svc.list_all()
         assert len(all_products) == 2

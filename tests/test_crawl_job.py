@@ -230,7 +230,11 @@ class TestDailyCrawlJobSave:
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
         mock_svc = AsyncMock()
-        mock_svc.save_raw_products = AsyncMock(return_value=1)
+        mock_svc.save_raw_products = AsyncMock(return_value={
+            "total": 1, "cleaned_count": 1, "saved_count": 1,
+            "new_count": 1, "updated_count": 0, "history_count": 1,
+            "failed_count": 0,
+        })
 
         with (
             patch("app.tasks.jobs.CrawlerManager") as mock_manager_cls,

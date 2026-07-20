@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from datetime import datetime, timedelta
+
+from loguru import logger
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.product import Product
@@ -89,3 +92,47 @@ class ProductRepository:
             return result.scalar_one_or_none()
 
         return None
+
+    # ── Archive ────────────────────────────────────────────────
+
+    async def archive_stale(self, days: int = 30) -> int:
+        """将超过 N 天未更新的商品标记为 ARCHIVED。
+
+        Args:
+            days: 多少天未更新则归档，默认 30。
+
+        Returns:
+            被归档的商品数量。
+        """
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        stmt = (
+            update(Product)
+            .where(
+                Product.status == "ACTIVE",
+                Product.updated_at < cutoff,
+            )
+            .values(status="ARCHIVED")
+        )
+        result = await self._session.execute(stmt)
+        archived = result.rowcount
+        if archived > 0:
+            logger.info("[archive] 归档 {} 个超过 {} 天未更新的商品", archived, days)
+        return archived
+
+    async def list_active(
+        self,
+        *,
+        platform: str | None = None,
+        shop: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Product]:
+        """获取所有 ACTIVE 状态的商品。"""
+        stmt = select(Product).where(Product.status == "ACTIVE")
+        if platform:
+            stmt = stmt.where(Product.platform == platform)
+        if shop:
+            stmt = stmt.where(Product.shop == shop)
+        stmt = stmt.order_by(Product.id).offset(offset).limit(limit)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())

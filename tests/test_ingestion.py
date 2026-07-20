@@ -77,7 +77,7 @@ class TestEndToEndIngestion:
         ])
 
         saved = await svc.save_raw_products(raws)
-        assert saved == 1
+        assert saved["saved_count"] == 1
 
         # Query from DB
         stmt = select(Product).where(Product.url == "https://xhslink.com/product/1")
@@ -107,7 +107,7 @@ class TestEndToEndIngestion:
         ])
 
         saved = await svc.save_raw_products(raws)
-        assert saved == 4
+        assert saved["saved_count"] == 4
 
         # Verify all in DB
         stmt = select(Product).order_by(Product.id)
@@ -130,7 +130,7 @@ class TestEndToEndIngestion:
             {"name": "蓝牙耳机V1", "url": "https://xhslink.com/p/1", "price": 99.9, "sales_24h": 100},
         ])
         saved1 = await svc.save_raw_products(raws1)
-        assert saved1 == 1
+        assert saved1["saved_count"] == 1
 
         # Get ID from first crawl
         stmt = select(Product).where(Product.url == "https://xhslink.com/p/1")
@@ -143,7 +143,7 @@ class TestEndToEndIngestion:
             {"name": "蓝牙耳机V2", "url": "https://xhslink.com/p/1", "price": 199.0, "sales_24h": 500},
         ])
         saved2 = await svc.save_raw_products(raws2)
-        assert saved2 == 1
+        assert saved2["saved_count"] == 1
 
         # Verify: still 1 product, data updated, same ID
         result = await session.execute(stmt)
@@ -169,7 +169,7 @@ class TestEndToEndIngestion:
         ])
 
         saved = await svc.save_raw_products(raws)
-        assert saved == 2
+        assert saved["saved_count"] == 2
 
         stmt = select(Product).order_by(Product.id)
         result = await session.execute(stmt)
@@ -187,7 +187,7 @@ class TestEndToEndIngestion:
         ])
 
         saved = await svc.save_raw_products(raws)
-        assert saved == 3
+        assert saved["saved_count"] == 3
 
         stmt = select(Product).order_by(Product.platform)
         result = await session.execute(stmt)
@@ -202,7 +202,7 @@ class TestEndToEndIngestion:
     async def test_empty_crawl_output(self, session):
         svc = ProductService(session)
         saved = await svc.save_raw_products([])
-        assert saved == 0
+        assert saved["saved_count"] == 0
 
     @pytest.mark.anyio
     async def test_name_cleans_emoji_and_ads(self, session):

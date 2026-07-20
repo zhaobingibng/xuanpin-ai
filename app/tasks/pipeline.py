@@ -45,6 +45,8 @@ class DailyPipeline:
             "raw_count": 0,
             "cleaned_count": 0,
             "saved_count": 0,
+            "new_count": 0,
+            "updated_count": 0,
             "history_count": 0,
             "trend_count": 0,
             "errors": [],
@@ -83,6 +85,8 @@ class DailyPipeline:
 
             summary["cleaned_count"] = analysis_result.get("cleaned_count", 0)
             summary["saved_count"] = analysis_result.get("saved_count", 0)
+            summary["new_count"] = analysis_result.get("new_count", 0)
+            summary["updated_count"] = analysis_result.get("updated_count", 0)
             summary["history_count"] = analysis_result.get("history_count", 0)
             summary["trend_count"] = analysis_result.get("trend_count", 0)
         except Exception as e:

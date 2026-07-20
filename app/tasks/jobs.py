@@ -198,8 +198,13 @@ async def daily_crawl_job(
             session_factory = get_async_session_factory()
             async with session_factory() as session:
                 svc = ProductService(session)
-                saved = await svc.save_raw_products(all_raw)
-                result["saved_count"] = saved
+                save_result = await svc.save_raw_products(all_raw)
+                result["saved_count"] = save_result["saved_count"]
+                result["cleaned_count"] = save_result["cleaned_count"]
+                result["new_count"] = save_result["new_count"]
+                result["updated_count"] = save_result["updated_count"]
+                result["history_count"] = save_result["history_count"]
+                result["failed_save_count"] = save_result["failed_count"]
         except Exception as e:
             error_msg = f"DB save error: {e}"
             logger.error("[Job:{}] {}", job_id, error_msg)
@@ -328,6 +333,24 @@ async def daily_crawl_job(
             logger.error("[Job:{}] {}", job_id, error_msg)
             result["errors"].append(error_msg)
 
+    # ── Step 11: Archive stale products ───────────────────────
+    if save_to_db:
+        logger.info("[Job:{}] Step 11: Archiving stale products…", job_id)
+        try:
+            from app.database.base import get_async_session_factory
+            from app.database.product_repository import ProductRepository
+
+            session_factory = get_async_session_factory()
+            async with session_factory() as session:
+                repo = ProductRepository(session)
+                archived = await repo.archive_stale(days=30)
+                await session.commit()
+                result["archived_count"] = archived
+        except Exception as e:
+            error_msg = f"Archive error: {e}"
+            logger.error("[Job:{}] {}", job_id, error_msg)
+            result["errors"].append(error_msg)
+
     # ── Update status: SUCCESS / FAILED ───────────────────────
     if status_id is not None:
         try:
@@ -353,8 +376,19 @@ async def daily_crawl_job(
     result["finished_at"] = datetime.now().isoformat()
 
     duration = (datetime.now() - start_time).total_seconds()
-    logger.info("[Job:{}] Completed in {:.1f}s — {} raw, {} cleaned, {} saved",
-                job_id, duration, result["raw_count"], result["cleaned_count"], result["saved_count"])
+
+    # ── Data quality metrics ──────────────────────────────────
+    raw_count = result["raw_count"]
+    cleaned_count = result.get("cleaned_count", 0)
+    saved_count = result.get("saved_count", 0)
+    result["clean_rate"] = round(cleaned_count / raw_count, 3) if raw_count > 0 else 0.0
+    result["save_rate"] = round(saved_count / cleaned_count, 3) if cleaned_count > 0 else 0.0
+
+    logger.info(
+        "[Job:{}] Completed in {:.1f}s — {} raw, {} cleaned, {} saved, clean_rate={}, save_rate={}",
+        job_id, duration, raw_count, cleaned_count, saved_count,
+        result["clean_rate"], result["save_rate"],
+    )
 
     return result
 

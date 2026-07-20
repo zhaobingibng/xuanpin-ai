@@ -27,6 +27,10 @@ class Product(Base):
     lifecycle_stage: Mapped[str] = mapped_column(
         String(20), nullable=False, default="NEW", server_default="NEW", comment="生命周期阶段"
     )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="ACTIVE", server_default="ACTIVE",
+        index=True, comment="商品状态: ACTIVE/ARCHIVED"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), comment="创建时间"
     )

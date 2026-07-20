@@ -10,6 +10,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.history_repository import HistoryRepository
+from app.database.knowledge_repository import KnowledgeRepository
 from app.database.report_repository import ReportRepository
 from app.models.daily_report import DailyReport, DailyReportItem
 from app.services.analytics.analyzer import TrendAnalyzer
@@ -36,6 +37,7 @@ class DailyReportService:
         self._product_service = ProductService(session)
         self._history_repo = HistoryRepository(session)
         self._report_repo = ReportRepository(session)
+        self._knowledge_repo = KnowledgeRepository(session)
         self._scorer = ProductScorer()
         self._lifecycle = LifecycleAnalyzer(session)
         self._decision = ProductDecisionEngine()
@@ -92,6 +94,7 @@ class DailyReportService:
                 "lifecycle": lifecycle_result["stage"],
                 "decision": decision_result,
                 "trend_score": trend_score,
+                "knowledge_tags": await self._knowledge_repo.get_product_tags(product.id),
             })
 
         # 3. 推荐排序
