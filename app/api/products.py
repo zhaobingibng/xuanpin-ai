@@ -2,11 +2,15 @@
 
 from fastapi import APIRouter, HTTPException
 
-from app.database.base import get_session_factory
+from app.database.base import get_async_session_factory, get_session_factory
+from app.database.history_repository import HistoryRepository
 from app.models.product import Product
 from app.models.product_history import ProductHistory
 from app.services.analytics.analyzer import TrendAnalyzer
 from app.services.cleaner.product_cleaner import ProductCleaner
+from app.services.decision.engine import ProductDecisionEngine
+from app.services.lifecycle.analyzer import LifecycleAnalyzer
+from app.services.scoring.product_scorer import ProductScorer
 
 router = APIRouter()
 
@@ -48,6 +52,45 @@ async def category_stats() -> dict[str, int]:
             return counts
     except Exception:
         return {}
+
+
+@router.get("/products/recommendations")
+async def recommendations() -> list[dict]:
+    """今日推荐商品：综合评分 + 生命周期 + 决策引擎。"""
+    try:
+        from app.services.product_service import ProductService
+
+        async_session_factory = get_async_session_factory()
+        async with async_session_factory() as session:
+            product_service = ProductService(session)
+            products = await product_service.list_all(limit=10_000)
+
+            scorer = ProductScorer()
+            lifecycle_analyzer = LifecycleAnalyzer(session)
+            decision_engine = ProductDecisionEngine()
+            history_repo = HistoryRepository(session)
+
+            results: list[dict] = []
+            for product in products:
+                history = list(await history_repo.get_history(product.id))
+                score_result = scorer.calculate_score(product, history or None)
+                lifecycle_result = await lifecycle_analyzer.analyze(product.id)
+                decision = decision_engine.decide(
+                    product, score_result["score"], lifecycle_result["stage"]
+                )
+                results.append({
+                    "name": product.name,
+                    "score": score_result["score"],
+                    "lifecycle": lifecycle_result["stage"],
+                    "action": decision["action"],
+                    "confidence": decision["confidence"],
+                    "reasons": decision["reason"],
+                })
+
+            results.sort(key=lambda x: x["confidence"], reverse=True)
+            return results
+    except Exception:
+        raise HTTPException(status_code=500, detail="获取推荐商品失败")
 
 
 @router.get("/products/{product_id}/trend")

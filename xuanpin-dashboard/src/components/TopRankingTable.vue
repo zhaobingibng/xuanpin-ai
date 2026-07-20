@@ -13,7 +13,9 @@
       v-loading="loading"
       :data="pagedData"
       stripe
+      row-class-name="clickable-row"
       @sort-change="handleSortChange"
+      @row-click="handleRowClick"
     >
       <el-table-column prop="rank" label="排名" width="80" align="center" />
       <el-table-column prop="name" label="商品名称" min-width="200" show-overflow-tooltip />
@@ -57,8 +59,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { getTop100 } from '@/api'
 import { type RankingItem, LEVEL_TAG_TYPE } from '@/types/ranking'
+
+const router = useRouter()
 
 type SortableField = 'ai_score' | 'trend_score' | 'final_score'
 type SortDirection = 'ascending' | 'descending'
@@ -120,6 +125,10 @@ function handleSortChange({ prop, order }: { prop: string; order: string | null 
     sort.value = { field: null, direction: 'ascending' }
   }
 }
+
+function handleRowClick(row: RankingItem) {
+  router.push(`/products/${row.product_id}`)
+}
 </script>
 
 <style scoped>
@@ -135,5 +144,11 @@ function handleSortChange({ prop, order }: { prop: string; order: string | null 
   margin-top: 16px;
   display: flex;
   justify-content: center;
+}
+</style>
+
+<style>
+.clickable-row {
+  cursor: pointer;
 }
 </style>

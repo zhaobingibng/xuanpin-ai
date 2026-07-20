@@ -33,16 +33,45 @@ class AppSettings(BaseSettings):
     ai_model: str = "gpt-4"
     ai_base_url: str = "https://api.openai.com/v1"
 
+    # Browser
+    browser_headless: bool = True
+    browser_timeout: int = 30000
+    browser_user_agent: str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+    browser_user_data_dir: str = "./storage/browser_profile"
+    browser_persistent: bool = True
+
     # Crawler
     crawler_user_agent: str = "XuanPinBot/1.0"
     crawler_timeout: int = 30
     crawler_max_retries: int = 3
+    crawler_retry: int = 3
+    crawler_retry_times: int = 3
+    crawler_retry_delay: int = 5
     crawler_headless: bool = False
-    crawler_cookie_dir: str = "./storage/cookies"
+    cookie_dir: str = "./storage/cookies"
+    login_check_timeout: int = 15
     crawler_storage_path: str = "./storage/crawler"
 
     # Storage
     storage_path: str = "./storage"
+
+    # Daily Pipeline
+    daily_crawl_hour: int = 8
+    crawl_keywords: list[str] = [
+        "蓝牙耳机",
+        "手机配件",
+        "家居用品",
+        "收纳神器",
+        "宠物用品",
+        "女装",
+        "美妆",
+    ]
+    daily_crawl_limit: int = 100
+    crawl_platforms: list[str] = ["xiaohongshu"]
+
+    # Xiaohongshu anti-bot cooldown (seconds between keyword crawls)
+    xhs_cooldown_min: int = 60
+    xhs_cooldown_max: int = 180
 
     @property
     def database_url(self) -> str:

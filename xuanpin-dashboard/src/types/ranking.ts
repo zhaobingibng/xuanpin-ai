@@ -1,5 +1,6 @@
 export interface RankingItem {
   rank: number
+  product_id: number
   name: string
   platform: string
   price: number

@@ -212,7 +212,7 @@ async def test_ranking_fields():
             resp = await client.get("/ranking/top100")
 
     data = resp.json()
-    expected_keys = {"rank", "name", "platform", "price", "ai_score", "trend_score", "final_score", "level"}
+    expected_keys = {"rank", "product_id", "name", "platform", "price", "ai_score", "trend_score", "final_score", "level"}
     assert set(data[0].keys()) == expected_keys
     assert data[0]["ai_score"] == 80.0
     assert "level" in data[0]

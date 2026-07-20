@@ -6,7 +6,9 @@ from typing import Any
 
 from loguru import logger
 
-# ── Scoring weights ────────────────────────────────────────────
+from app.services.scoring.product_scorer import ProductScorer
+
+# ── Scoring weights (legacy mode) ────────────────────────────
 
 _WEIGHT_AI = 0.6
 _WEIGHT_TREND = 0.4
@@ -26,19 +28,21 @@ _LEVEL_LOW = "低潜"        # < 50
 class RankingService:
     """商品排行榜服务。
 
-    输入包含 product 对象 + ai_score + trend_score 的字典列表，
-    按综合评分（ai_score × 0.6 + trend_score × 0.4）降序排列，
-    输出带 rank / level 的排行榜。
+    支持两种模式：
 
-    Usage::
+    **Scorer 模式** (推荐)::
 
-        service = RankingService()
-        board = service.get_top_products([
-            {"product": product_obj, "ai_score": 85.0, "trend_score": 70.0},
-            ...
-        ])
-        # [{"rank": 1, "product_id": 5, "name": "...", ...}, ...]
+        items = [{"product": Product, "history": [ProductHistory, ...]}, ...]
+        # 使用 ProductScorer 计算综合评分，按 score 降序排列。
+
+    **Legacy 模式** (兼容)::
+
+        items = [{"product": Product, "ai_score": float, "trend_score": float}, ...]
+        # 使用 ai_score × 0.6 + trend_score × 0.4 公式。
     """
+
+    def __init__(self) -> None:
+        self._scorer = ProductScorer()
 
     # ── Public API ────────────────────────────────────────────
 
@@ -50,17 +54,62 @@ class RankingService:
         """生成商品排行榜。
 
         Args:
-            items: 每个元素为 ``{"product": Product, "ai_score": float, "trend_score": float}``。
+            items: 商品数据列表。
             limit: 返回的最大商品数量，默认 TOP 100。
 
         Returns:
-            按 final_score 降序排列的排行榜列表，每个元素包含：
-            rank, product_id, name, platform, price,
-            ai_score, trend_score, final_score, level。
+            按分数降序排列的排行榜列表。
         """
         if not items:
             return []
 
+        # Detect mode: if first item has "history" key → scorer mode
+        if "history" in items[0]:
+            return self._rank_with_scorer(items, limit)
+        return self._rank_legacy(items, limit)
+
+    # ── Scorer mode ──────────────────────────────────────────
+
+    def _rank_with_scorer(
+        self,
+        items: list[dict[str, Any]],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Rank using ProductScorer."""
+        scored: list[dict[str, Any]] = []
+        for item in items:
+            product = item["product"]
+            history = item.get("history")
+            result = self._scorer.calculate_score(product, history)
+
+            scored.append({
+                "product_id": product.id,
+                "name": product.name,
+                "platform": product.platform,
+                "price": product.price,
+                "score": result["score"],
+                "level": result["level"],
+                "reasons": result["reasons"],
+            })
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+
+        board: list[dict[str, Any]] = []
+        for i, entry in enumerate(scored[:limit], start=1):
+            entry["rank"] = i
+            board.append(entry)
+
+        logger.debug("RankingService(scorer): {} items → top {}", len(items), len(board))
+        return board
+
+    # ── Legacy mode ──────────────────────────────────────────
+
+    def _rank_legacy(
+        self,
+        items: list[dict[str, Any]],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Rank using legacy ai_score / trend_score formula."""
         scored: list[dict[str, Any]] = []
         for item in items:
             product = item["product"]
@@ -79,16 +128,14 @@ class RankingService:
                 "level": self._determine_level(final),
             })
 
-        # Sort descending by final_score
         scored.sort(key=lambda x: x["final_score"], reverse=True)
 
-        # Apply limit and assign rank
         board: list[dict[str, Any]] = []
         for i, entry in enumerate(scored[:limit], start=1):
             entry["rank"] = i
             board.append(entry)
 
-        logger.debug("RankingService: {} items → top {}", len(items), len(board))
+        logger.debug("RankingService(legacy): {} items → top {}", len(items), len(board))
         return board
 
     # ── Internal ──────────────────────────────────────────────

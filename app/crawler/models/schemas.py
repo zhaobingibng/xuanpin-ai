@@ -16,6 +16,10 @@ class RawProduct:
     sales_24h: int = 0
     image: str | None = None
     url: str | None = None
+    category: str = ""
+    favorites: int = 0
+    comments: int = 0
+    publish_time: str | None = None
     crawled_at: datetime = field(default_factory=datetime.now)
 
     def to_db_kwargs(self) -> dict:
@@ -28,4 +32,6 @@ class RawProduct:
             "viewers": self.viewers,
             "sales_24h": self.sales_24h,
             "image": self.image,
+            "url": self.url,
+            "category": self.category or None,
         }

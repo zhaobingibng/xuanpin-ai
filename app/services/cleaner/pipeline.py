@@ -22,6 +22,7 @@ class CleanedProduct:
     sales_24h: int
     category: str
     image: str | None = None
+    url: str | None = None
 
     def to_db_kwargs(self) -> dict:
         """Return kwargs suitable for ProductService.create()."""
@@ -33,6 +34,8 @@ class CleanedProduct:
             "price": self.price,
             "viewers": self.viewers,
             "sales_24h": self.sales_24h,
+            "category": self.category or None,
+            "url": self.url,
         }
 
 
@@ -84,6 +87,7 @@ class ProductCleanPipeline:
             sales_24h=sales,
             category=category,
             image=raw.image,
+            url=raw.url,
         )
 
     # ── Batch ─────────────────────────────────────────────────

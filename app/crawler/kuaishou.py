@@ -14,10 +14,6 @@ class KuaishouCrawler(BaseCrawler):
     ECOM_URL = "https://university.kuaishou.com"
     SEARCH_URL = "https://www.kuaishou.com/search"
 
-    def __init__(self) -> None:
-        super().__init__()
-        self._cookie_file_path = self._cookies_dir / "kuaishou.json"
-
     # ── Login ─────────────────────────────────────────────────
 
     async def login(self) -> bool:
@@ -27,11 +23,56 @@ class KuaishouCrawler(BaseCrawler):
             return True
         return await super().login()
 
+    # ── Login detection ────────────────────────────────────────
+
+    async def check_login(self) -> bool:
+        """检测快手登录状态。
+
+        启动浏览器 → 加载 Cookie → 访问首页 → 判断登录元素。
+        返回 True 已登录, False 未登录。
+        """
+        if not self.has_cookies():
+            logger.info("[kuaishou] login required")
+            return False
+
+        context = None
+        try:
+            context = await self._new_context()
+            await self.load_cookies(context)
+            page = await context.new_page()
+            timeout = self._settings.login_check_timeout * 1000
+            await page.goto(self.BASE_URL, wait_until="domcontentloaded", timeout=timeout)
+
+            # 登录按钮存在 → 未登录
+            login_el = await page.query_selector(
+                "[class*='login'], [class*='signin']"
+            )
+            if login_el:
+                logger.info("[kuaishou] login required")
+                return False
+
+            # 用户信息 / 头像 / 个人中心存在 → 已登录
+            user_el = await page.query_selector(
+                "[class*='avatar'], [class*='user-info'], [class*='personal']"
+            )
+            if user_el:
+                logger.info("[kuaishou] login success")
+                return True
+
+            logger.info("[kuaishou] login required")
+            return False
+
+        except Exception as e:
+            logger.warning("[kuaishou] login check failed: {}", e)
+            return False
+        finally:
+            if context:
+                await context.close()
+
     # ── Crawl ─────────────────────────────────────────────────
 
-    async def crawl(self, keyword: str, max_pages: int = 3) -> list[RawProduct]:
+    async def _do_crawl(self, keyword: str, max_pages: int = 3) -> list[RawProduct]:
         """Search Kuaishou for *keyword* and scrape product cards."""
-        logger.info("[kuaishou] Searching '{}' (max {} pages)", keyword, max_pages)
         products: list[RawProduct] = []
 
         context = await self._new_context()
@@ -62,7 +103,6 @@ class KuaishouCrawler(BaseCrawler):
         finally:
             await context.close()
 
-        logger.info("[kuaishou] Total products crawled: {}", len(products))
         return products
 
     # ── Parse ─────────────────────────────────────────────────

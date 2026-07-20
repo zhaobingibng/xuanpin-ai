@@ -53,8 +53,7 @@ class TestRawProduct:
         )
         kwargs = p.to_db_kwargs()
 
-        # url and crawled_at should NOT be in db kwargs
-        assert "url" not in kwargs
+        # crawled_at should NOT be in db kwargs
         assert "crawled_at" not in kwargs
 
         # All product fields should be present
@@ -65,6 +64,8 @@ class TestRawProduct:
         assert kwargs["viewers"] == 1200
         assert kwargs["sales_24h"] == 45
         assert kwargs["image"] == "https://img.example.com/sunscreen.jpg"
+        assert kwargs["url"] == "https://example.com/product/456"
+        assert kwargs["category"] is None  # default empty string → None
 
     def test_to_db_kwargs_minimal(self):
         p = RawProduct(name="简约商品", platform="xiaohongshu", shop="简店", price=10.0)
@@ -72,6 +73,8 @@ class TestRawProduct:
         assert kwargs["viewers"] == 0
         assert kwargs["sales_24h"] == 0
         assert kwargs["image"] is None
+        assert kwargs["url"] is None
+        assert kwargs["category"] is None
 
 
 # ── BaseCrawler.parse_count ───────────────────────────────────
@@ -121,13 +124,18 @@ class _StubCrawler(BaseCrawler):
     """Minimal concrete crawler for testing."""
 
     def __init__(self, platform: str = "test") -> None:
+        from unittest.mock import MagicMock
         self.PLATFORM = platform
         self.BASE_URL = "https://example.com"
         # Skip super().__init__() to avoid settings/playwright dependency
         self._playwright = None
         self._browser = None
+        self._settings = MagicMock()
+        self._settings.crawler_retry = 3
+        self._settings.crawler_retry_times = 3
+        self._settings.crawler_retry_delay = 0
 
-    async def crawl(self, keyword: str, max_pages: int = 3) -> list[RawProduct]:
+    async def _do_crawl(self, keyword: str, max_pages: int = 3) -> list[RawProduct]:
         return [
             RawProduct(
                 name=f"{keyword}-商品1",

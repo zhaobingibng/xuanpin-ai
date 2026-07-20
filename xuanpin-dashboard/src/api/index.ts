@@ -1,5 +1,16 @@
 import axios from 'axios'
 import type { RankingItem } from '@/types/ranking'
+import type { Product, TrendResult } from '@/types/product'
+import type { DailyReport } from '@/types/report'
+import type {
+  DashboardOverview,
+  ReviewAccuracy,
+  DailyRecommendationResponse,
+  Opportunity,
+  AssistantResponse,
+  StrategyRecord,
+} from '@/types/workbench'
+import type { Shop, ShopCreateRequest, ShopUpdateRequest } from '@/types/shop'
 
 const api = axios.create({
   baseURL: 'http://127.0.0.1:8000',
@@ -20,11 +31,11 @@ export function getProducts() {
 }
 
 export function getProduct(id: number) {
-  return api.get(`/products/${id}`)
+  return api.get<Product>(`/products/${id}`)
 }
 
 export function getProductTrend(id: number) {
-  return api.get(`/products/${id}/trend`)
+  return api.get<TrendResult>(`/products/${id}/trend`)
 }
 
 // ── 排行榜 ────────────────────────────────────────
@@ -39,6 +50,58 @@ export function getCategoryStats() {
 
 export function getPlatformStats() {
   return api.get<Record<string, number>>('/stats/platform')
+}
+
+// ── 日报 ──────────────────────────────────────────
+export function getDailyReport(limit?: number) {
+  const params = limit !== undefined ? { limit } : undefined
+  return api.get<DailyReport>('/reports/daily', { params })
+}
+
+// ── 运营工作台 ─────────────────────────────────────
+export function getWorkbenchOverview() {
+  return api.get<DashboardOverview>('/dashboard/overview')
+}
+
+export function getReviewAccuracy() {
+  return api.get<ReviewAccuracy>('/reviews/accuracy')
+}
+
+export function getDailyRecommendations() {
+  return api.get<DailyRecommendationResponse>('/recommendations/daily')
+}
+
+export function getOpportunities() {
+  return api.get<Opportunity[]>('/recommendations/opportunities')
+}
+
+export function askAssistant(question: string) {
+  return api.post<AssistantResponse>('/assistant/ask', { question })
+}
+
+export function getStrategy(productId: number) {
+  return api.get<StrategyRecord[]>(`/strategy/${productId}`)
+}
+
+export function generateStrategy(productId: number) {
+  return api.post<{ title: string; selling_points: string[]; xiaohongshu_copy: string; xianyu_copy: string; price_strategy: { cost: number; sell: number; profit: number }; profit_analysis: { cost: number; sell: number; profit_per_unit: number; profit_margin: string; daily_estimate: number; monthly_estimate: number } }>('/strategy/generate', { product_id: productId })
+}
+
+// ── 店铺注册表 ─────────────────────────────────────
+export function getShops() {
+  return api.get<Shop[]>('/api/shops')
+}
+
+export function createShop(data: ShopCreateRequest) {
+  return api.post<Shop>('/api/shops', data)
+}
+
+export function updateShop(id: number, data: ShopUpdateRequest) {
+  return api.patch<Shop>(`/api/shops/${id}`, data)
+}
+
+export function deleteShop(id: number) {
+  return api.delete<{ message: string }>(`/api/shops/${id}`)
 }
 
 export default api

@@ -6,7 +6,7 @@ from loguru import logger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app.tasks.jobs import daily_crawl_job
+from app.tasks.jobs import auto_crawl_job, daily_crawl_job, daily_pipeline_job
 
 
 class TaskScheduler:
@@ -37,7 +37,7 @@ class TaskScheduler:
         platforms: list[str] | None = None,
         max_pages: int = 3,
         save_to_db: bool = True,
-        hour: int = 9,
+        hour: int = 2,
         minute: int = 0,
         job_id: str = "daily_crawl",
     ) -> str:
@@ -48,7 +48,7 @@ class TaskScheduler:
             platforms: platforms to crawl (None = all)
             max_pages: max pages per keyword per platform
             save_to_db: whether to persist to database
-            hour: hour to run (24h format, default 09:00)
+            hour: hour to run (24h format, default 02:00)
             minute: minute to run
             job_id: unique job identifier
 
@@ -81,6 +81,91 @@ class TaskScheduler:
         logger.info(
             "Scheduled job '{}': daily at {:02d}:{:02d}, keywords={}",
             job_id, hour, minute, keywords,
+        )
+        return job_id
+
+    def add_auto_crawl(
+        self,
+        hour: int = 2,
+        minute: int = 0,
+        job_id: str = "daily_crawl",
+    ) -> str:
+        """Schedule auto_crawl_job — reads keywords/platforms from settings.
+
+        Args:
+            hour: hour to run (24h format, default 02:00)
+            minute: minute to run
+            job_id: unique job identifier
+
+        Returns:
+            The job ID.
+        """
+        trigger = CronTrigger(hour=hour, minute=minute)
+
+        try:
+            self._scheduler.remove_job(job_id)
+        except Exception:
+            pass
+
+        self._scheduler.add_job(
+            auto_crawl_job,
+            trigger=trigger,
+            id=job_id,
+            name="Auto crawl (from settings)",
+            replace_existing=True,
+        )
+
+        logger.info(
+            "Scheduled job '{}': daily at {:02d}:{:02d} (auto from settings)",
+            job_id, hour, minute,
+        )
+        return job_id
+
+    def add_daily_pipeline(
+        self,
+        keywords: list[str] | None = None,
+        platforms: list[str] | None = None,
+        max_pages: int = 3,
+        hour: int = 8,
+        minute: int = 0,
+        job_id: str = "daily_pipeline",
+    ) -> str:
+        """Schedule the daily pipeline job.
+
+        Args:
+            keywords: search keywords (None = default list)
+            platforms: platforms to crawl (None = all)
+            max_pages: max pages per keyword per platform
+            hour: hour to run (24h format, default 08:00)
+            minute: minute to run
+            job_id: unique job identifier
+
+        Returns:
+            The job ID.
+        """
+        trigger = CronTrigger(hour=hour, minute=minute)
+
+        try:
+            self._scheduler.remove_job(job_id)
+        except Exception:
+            pass
+
+        self._scheduler.add_job(
+            daily_pipeline_job,
+            trigger=trigger,
+            kwargs={
+                "keywords": keywords,
+                "platforms": platforms,
+                "max_pages": max_pages,
+            },
+            id=job_id,
+            name="Daily pipeline (crawl → clean → save → trend → ranking)",
+            replace_existing=True,
+        )
+
+        logger.info(
+            "Scheduled job '{}': daily at {:02d}:{:02d}",
+            job_id, hour, minute,
         )
         return job_id
 
@@ -158,3 +243,89 @@ class TaskScheduler:
     def running(self) -> bool:
         """Check if scheduler is running."""
         return self._running
+
+    # ── Task Execution Tracking ────────────────────────────────
+
+    @staticmethod
+    async def tracked_execute(
+        task_name: str,
+        func,
+        *args,
+        timeout: float | None = None,
+        **kwargs,
+    ):
+        """Execute a job with TaskExecution record tracking.
+
+        Creates a RUNNING record, executes the function,
+        then updates to SUCCESS or FAILED with duration.
+
+        Args:
+            task_name: Task name for logging.
+            func: Async function to execute.
+            *args: Positional arguments.
+            timeout: Optional timeout in seconds (None = no timeout).
+            **kwargs: Keyword arguments.
+        """
+        import asyncio
+        from datetime import datetime
+
+        from app.services.metrics.service import MetricsService
+
+        start_time = datetime.now()
+        record_id = None
+
+        # Increment task counter
+        MetricsService.inc_scheduler_task()
+
+        # Create RUNNING record
+        try:
+            from app.database.base import get_async_session_factory
+            from app.database.task_execution_repository import TaskExecutionRepository
+            from app.models.task_execution import TaskExecution
+
+            session_factory = get_async_session_factory()
+            async with session_factory() as session:
+                repo = TaskExecutionRepository(session)
+                record = TaskExecution(task_name=task_name, status="RUNNING")
+                created = await repo.create(record)
+                await session.commit()
+                record_id = created.id
+        except Exception as e:
+            logger.warning("[Scheduler] Failed to record task start: {}", e)
+
+        # Execute (with optional timeout)
+        error_msg = None
+        status = "SUCCESS"
+        try:
+            if timeout is not None:
+                result = await asyncio.wait_for(func(*args, **kwargs), timeout=timeout)
+            else:
+                result = await func(*args, **kwargs)
+            return result
+        except asyncio.TimeoutError:
+            status = "FAILED"
+            error_msg = f"TaskTimeoutError: exceeded {timeout}s limit"
+            MetricsService.inc_scheduler_task_failed()
+            logger.error("[Scheduler] Task '{}' timed out after {}s", task_name, timeout)
+            raise
+        except Exception as e:
+            status = "FAILED"
+            error_msg = str(e)
+            MetricsService.inc_scheduler_task_failed()
+            logger.error("[Scheduler] Task '{}' failed: {}", task_name, e)
+            raise
+        finally:
+            duration = (datetime.now() - start_time).total_seconds()
+            if record_id is not None:
+                try:
+                    async with session_factory() as session:
+                        repo = TaskExecutionRepository(session)
+                        await repo.finish(
+                            record_id,
+                            status=status,
+                            duration=duration,
+                            error=error_msg,
+                        )
+                        await session.commit()
+                except Exception as e:
+                    logger.warning("[Scheduler] Failed to record task finish: {}", e)

@@ -1,21 +1,34 @@
-"""Xiaohongshu (小红书) product crawler."""
+"""Xiaohongshu (小红书) product crawler — production-grade.
+
+Enhanced with multi-page collection, sort modes, and extended field parsing.
+"""
 
 from loguru import logger
 
 from app.crawler.base import BaseCrawler
+from app.crawler.browser import random_delay, random_scroll, mouse_move
 from app.crawler.models.schemas import RawProduct
+
+# 排序参数映射
+SORT_PARAMS = {
+    "general": "general",
+    "sales": "sales",
+    "latest": "time",
+}
 
 
 class XiaohongshuCrawler(BaseCrawler):
-    """Crawl product data from Xiaohongshu (小红书)."""
+    """Crawl product data from Xiaohongshu (小红书).
+
+    Supports:
+    - Multi-page collection via page_limit
+    - Sort modes: general (综合), sales (销量), latest (最新)
+    - Extended fields: favorites, comments, publish_time
+    """
 
     PLATFORM = "xiaohongshu"
     BASE_URL = "https://www.xiaohongshu.com"
     SEARCH_URL = "https://www.xiaohongshu.com/search_result"
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._cookie_file_path = self._cookies_dir / "xiaohongshu.json"
 
     # ── Login ─────────────────────────────────────────────────
 
@@ -26,12 +39,137 @@ class XiaohongshuCrawler(BaseCrawler):
             return True
         return await super().login()
 
+    # ── Login detection ────────────────────────────────────────
+
+    async def check_login(self) -> bool:
+        """检测小红书登录状态。
+
+        启动浏览器 → 加载 Cookie → 访问首页 → 判断登录元素。
+        返回 True 已登录, False 未登录。
+        """
+        if not self.has_cookies():
+            logger.info("[xiaohongshu] login required")
+            return False
+
+        context = None
+        try:
+            context = await self._new_context()
+            await self.load_cookies(context)
+            page = await context.new_page()
+            timeout = self._settings.login_check_timeout * 1000
+            await page.goto(self.BASE_URL, wait_until="domcontentloaded", timeout=timeout)
+
+            # 先检查是否已登录（用户头像/个人中心存在）
+            user_el = await page.query_selector(
+                "[class*='user'], [class*='avatar'], [class*='sidebar']"
+            )
+            if user_el:
+                # 已登录，尝试关闭可能弹出的登录推荐框
+                close_btn = await page.query_selector(
+                    ".login-modal [class*='close'], "
+                    ".reds-modal [class*='close'], "
+                    "[class*='modal'] [class*='close']"
+                )
+                if close_btn:
+                    try:
+                        await close_btn.click()
+                        logger.info("[xiaohongshu] Closed login popup overlay")
+                    except Exception:
+                        pass
+                logger.info("[xiaohongshu] login success")
+                return True
+
+            # 未找到用户元素，再检查登录弹窗
+            login_el = await page.query_selector(
+                "[class*='login'], [class*='signin'], [class*='qrcode']"
+            )
+            if login_el:
+                logger.info("[xiaohongshu] login required")
+                return False
+
+            logger.info("[xiaohongshu] login required")
+            return False
+
+        except Exception as e:
+            logger.warning("[xiaohongshu] login check failed: {}", e)
+            return False
+        finally:
+            if context:
+                await context.close()
+
     # ── Crawl ─────────────────────────────────────────────────
 
-    async def crawl(self, keyword: str, max_pages: int = 3) -> list[RawProduct]:
-        """Search Xiaohongshu for *keyword* and scrape product cards."""
-        logger.info("[xiaohongshu] Searching '{}' (max {} pages)", keyword, max_pages)
+    async def crawl(
+        self,
+        keyword: str,
+        max_pages: int = 3,
+        limit: int = 100,
+        *,
+        crawl_sort: str = "general",
+    ) -> list[RawProduct]:
+        """采集入口 — 支持 limit、排序、自动重试。
+
+        Args:
+            keyword: 搜索关键词.
+            max_pages: 最多翻页数.
+            limit: 最多采集商品数量, 默认 100.
+            crawl_sort: 排序方式 "general"/"sales"/"latest".
+        """
+        from datetime import datetime
+
+        start = datetime.now()
+        logger.info(
+            "{}:\nkeyword={}\npages={}\nlimit={}\nsort={}",
+            self.PLATFORM,
+            keyword,
+            max_pages,
+            limit,
+            crawl_sort,
+        )
+
+        try:
+            products = await self._with_retry(
+                self._do_crawl,
+                keyword=keyword,
+                max_pages=max_pages,
+                limit=limit,
+                crawl_sort=crawl_sort,
+            )
+        except Exception as e:
+            logger.error("[{}] Crawl failed after all retries: {}", self.PLATFORM, e)
+            products = []
+
+        elapsed = (datetime.now() - start).total_seconds()
+        logger.info(
+            "{}:\nkeyword={}\nsuccess={}\n耗时={:.1f}s",
+            self.PLATFORM,
+            keyword,
+            len(products),
+            elapsed,
+        )
+        return products
+
+    async def _do_crawl(
+        self,
+        keyword: str,
+        max_pages: int = 3,
+        limit: int = 100,
+        crawl_sort: str = "general",
+    ) -> list[RawProduct]:
+        """Search Xiaohongshu for *keyword* and scrape product cards.
+
+        Args:
+            keyword: 搜索关键词.
+            max_pages: 最多翻页数.
+            limit: 最多采集商品数量, 默认 100.
+            crawl_sort: 排序方式.
+        """
+        if not await self.check_login():
+            logger.warning("[xiaohongshu] 未登录, 停止采集")
+            return []
+
         products: list[RawProduct] = []
+        sort_param = SORT_PARAMS.get(crawl_sort, "general")
 
         context = await self._new_context()
         try:
@@ -39,33 +177,56 @@ class XiaohongshuCrawler(BaseCrawler):
             await self.load_cookies(context)
 
             for page_num in range(1, max_pages + 1):
-                url = f"{self.SEARCH_URL}?keyword={keyword}&source=web_search_result_notes&page={page_num}"
+                url = (
+                    f"{self.SEARCH_URL}?keyword={keyword}"
+                    f"&source=web_search_result_notes"
+                    f"&page={page_num}"
+                    f"&sort={sort_param}"
+                )
                 logger.debug("[xiaohongshu] Page {}/{}: {}", page_num, max_pages, url)
 
-                await page.goto(url, wait_until="networkidle")
+                # 使用 safe_goto 支持页面异常恢复
+                page = await self._browser_manager.safe_goto(
+                    page, url, platform=self.PLATFORM
+                )
                 await page.wait_for_timeout(2000)
-                await self._scroll_page(page, times=2)
 
-                cards = await page.query_selector_all("[class*='note-item'], [class*='goods-card']")
+                # 行为模拟：随机滚动 + 鼠标移动
+                await random_scroll(page, times=2)
+                await mouse_move(page)
+                await random_delay(500, 1500)
+
+                cards = await page.query_selector_all(
+                    "[class*='note-item'], [class*='goods-card']"
+                )
                 logger.info("[xiaohongshu] Page {}: found {} cards", page_num, len(cards))
 
                 for card in cards:
+                    if len(products) >= limit:
+                        logger.info("[xiaohongshu] reached limit {}, stop", limit)
+                        break
                     product = await self._parse_product(card)
                     if product:
                         products.append(product)
+
+                if len(products) >= limit:
+                    break
 
             await self.save_cookies(context)
 
         finally:
             await context.close()
 
-        logger.info("[xiaohongshu] Total products crawled: {}", len(products))
         return products
 
     # ── Parse ─────────────────────────────────────────────────
 
     async def _parse_product(self, element) -> RawProduct | None:
-        """Parse a single Xiaohongshu product card element."""
+        """Parse a single Xiaohongshu product card element.
+
+        Extracts: name, price, image, shop, viewers, sales, url,
+        favorites, comments, publish_time.
+        """
         try:
             # Name / title
             name_el = await element.query_selector(
@@ -109,6 +270,41 @@ class XiaohongshuCrawler(BaseCrawler):
                 view_text = await view_el.inner_text()
                 viewers = self.parse_count(view_text)
 
+            # Sales
+            sales = 0
+            sales_el = await element.query_selector(
+                "[class*='sales'], [class*='sold'], [class*='buy']"
+            )
+            if sales_el:
+                sales_text = await sales_el.inner_text()
+                sales = self.parse_count(sales_text)
+
+            # Favorites / 收藏
+            favorites = 0
+            fav_el = await element.query_selector(
+                "[class*='collect'], [class*='favorite'], [class*='fav']"
+            )
+            if fav_el:
+                fav_text = await fav_el.inner_text()
+                favorites = self.parse_count(fav_text)
+
+            # Comments / 评论
+            comments = 0
+            comment_el = await element.query_selector(
+                "[class*='comment'], [class*='reply']"
+            )
+            if comment_el:
+                comment_text = await comment_el.inner_text()
+                comments = self.parse_count(comment_text)
+
+            # Publish time / 发布时间
+            publish_time = None
+            time_el = await element.query_selector(
+                "[class*='time'], [class*='date'], [class*='publish']"
+            )
+            if time_el:
+                publish_time = (await time_el.inner_text()).strip() or None
+
             # Link
             url = None
             link_el = await element.query_selector("a[href*='goods'], a[href*='explore']")
@@ -122,20 +318,13 @@ class XiaohongshuCrawler(BaseCrawler):
                 price=price,
                 image=image,
                 viewers=viewers,
-                sales_24h=0,
+                sales_24h=sales,
                 url=url,
+                favorites=favorites,
+                comments=comments,
+                publish_time=publish_time,
             )
 
         except Exception as e:
             logger.warning("[xiaohongshu] Failed to parse product card: {}", e)
             return None
-
-    # ── Helpers ────────────────────────────────────────────────
-
-    async def _check_login(self, page) -> bool:
-        """Verify login status by checking for user-specific elements."""
-        try:
-            user_el = await page.query_selector("[class*='user'], [class*='avatar'], [class*='sidebar']")
-            return user_el is not None
-        except Exception:
-            return False

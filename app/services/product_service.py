@@ -1,11 +1,18 @@
 """Async CRUD service for Product."""
 
+from __future__ import annotations
+
 from typing import Sequence
 
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crawler.models.schemas import RawProduct
+from app.database.history_repository import HistoryRepository
+from app.database.product_repository import ProductRepository
 from app.models.product import Product
+from app.services.cleaner.pipeline import ProductCleanPipeline
 
 
 class ProductService:
@@ -13,6 +20,66 @@ class ProductService:
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+        self._repo = ProductRepository(session)
+        self._history_repo = HistoryRepository(session)
+        self._pipeline = ProductCleanPipeline()
+
+    # ── Ingestion ─────────────────────────────────────────────
+
+    async def save_raw_products(
+        self, products: list[RawProduct]
+    ) -> int:
+        """Clean raw products and persist them to the database.
+
+        Flow: RawProduct → CleanPipeline → Repository.upsert → DB.
+
+        Returns:
+            The number of products successfully saved (new + updated).
+        """
+        total = len(products)
+        logger.info("开始保存商品: 输入数量={}", total)
+
+        if total == 0:
+            return 0
+
+        # Step 1: clean + classify + batch-dedup
+        cleaned = self._pipeline.process_batch(products)
+        cleaned_count = len(cleaned)
+        logger.info("清洗完成: 清洗数量={}", cleaned_count)
+
+        # Step 2: upsert each cleaned product + history snapshot
+        new_count = 0
+        updated_count = 0
+        failed_count = 0
+        history_count = 0
+
+        for item in cleaned:
+            try:
+                kwargs = item.to_db_kwargs()
+                product, is_new = await self._repo.upsert(**kwargs)
+                if is_new:
+                    new_count += 1
+                else:
+                    updated_count += 1
+
+                # Step 3: create history snapshot
+                snapshot = await self._history_repo.create_snapshot(product)
+                if snapshot is not None:
+                    history_count += 1
+            except Exception as e:
+                failed_count += 1
+                logger.warning("保存商品失败: {}", e)
+
+        await self._session.commit()
+
+        logger.info(
+            "保存完成: 新增={}, 更新={}, 历史={}, 失败={}",
+            new_count,
+            updated_count,
+            history_count,
+            failed_count,
+        )
+        return new_count + updated_count
 
     # ── Create ────────────────────────────────────────────────
 

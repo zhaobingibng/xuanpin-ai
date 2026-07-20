@@ -6,6 +6,26 @@ const routes: RouteRecordRaw[] = [
     name: 'Dashboard',
     component: () => import('@/views/Dashboard.vue'),
   },
+  {
+    path: '/products/:id',
+    name: 'ProductDetail',
+    component: () => import('@/views/ProductDetail.vue'),
+  },
+  {
+    path: '/workbench',
+    name: 'Workbench',
+    component: () => import('@/views/Workbench.vue'),
+  },
+  {
+    path: '/reports/daily',
+    name: 'DailyReport',
+    component: () => import('@/views/DailyReport.vue'),
+  },
+  {
+    path: '/shops',
+    name: 'ShopRegistry',
+    component: () => import('@/views/ShopRegistry.vue'),
+  },
 ]
 
 const router = createRouter({

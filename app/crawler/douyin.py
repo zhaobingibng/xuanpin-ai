@@ -14,10 +14,6 @@ class DouyinCrawler(BaseCrawler):
     ECOM_URL = "https://buyin.jinritemai.com"
     SEARCH_URL = "https://www.douyin.com/search"
 
-    def __init__(self) -> None:
-        super().__init__()
-        self._cookie_file_path = self._cookies_dir / "douyin.json"
-
     # ── Login ─────────────────────────────────────────────────
 
     async def login(self) -> bool:
@@ -27,11 +23,62 @@ class DouyinCrawler(BaseCrawler):
             return True
         return await super().login()
 
+    # ── Login detection ────────────────────────────────────────
+
+    async def check_login(self) -> bool:
+        """检测抖音登录状态。
+
+        启动浏览器 → 加载 Cookie → 访问首页 → 判断登录元素。
+        返回 True 已登录, False 未登录。
+        """
+        if not self.has_cookies():
+            logger.info("[douyin] login required")
+            return False
+
+        context = None
+        try:
+            context = await self._new_context()
+            await self.load_cookies(context)
+            page = await context.new_page()
+            timeout = self._settings.login_check_timeout * 1000
+            await page.goto(self.BASE_URL, wait_until="domcontentloaded", timeout=timeout)
+
+            # login-guide 元素存在 → 未登录
+            guide_el = await page.query_selector("[class*='login-guide']")
+            if guide_el:
+                logger.info("[douyin] login required")
+                return False
+
+            # 登录按钮存在 → 未登录
+            login_btn = await page.query_selector(
+                "[class*='login-btn'], [class*='login-button']"
+            )
+            if login_btn:
+                logger.info("[douyin] login required")
+                return False
+
+            # 用户信息 / 头像存在 → 已登录
+            user_el = await page.query_selector(
+                "[class*='avatar'], [class*='user-info']"
+            )
+            if user_el:
+                logger.info("[douyin] login success")
+                return True
+
+            logger.info("[douyin] login required")
+            return False
+
+        except Exception as e:
+            logger.warning("[douyin] login check failed: {}", e)
+            return False
+        finally:
+            if context:
+                await context.close()
+
     # ── Crawl ─────────────────────────────────────────────────
 
-    async def crawl(self, keyword: str, max_pages: int = 3) -> list[RawProduct]:
+    async def _do_crawl(self, keyword: str, max_pages: int = 3) -> list[RawProduct]:
         """Search Douyin for *keyword* and scrape product cards."""
-        logger.info("[douyin] Searching '{}' (max {} pages)", keyword, max_pages)
         products: list[RawProduct] = []
 
         context = await self._new_context()
@@ -45,7 +92,7 @@ class DouyinCrawler(BaseCrawler):
 
                 await page.goto(url, wait_until="networkidle")
                 await page.wait_for_timeout(3000)
-                await self._scroll_page(page, times=3, delay_ms= 2500)
+                await self._scroll_page(page, times=3, delay_ms=2500)
 
                 cards = await page.query_selector_all(
                     "[class*='product-card'], [class*='goods-item'], [class*='card-item']"
@@ -62,7 +109,6 @@ class DouyinCrawler(BaseCrawler):
         finally:
             await context.close()
 
-        logger.info("[douyin] Total products crawled: {}", len(products))
         return products
 
     # ── Parse ─────────────────────────────────────────────────

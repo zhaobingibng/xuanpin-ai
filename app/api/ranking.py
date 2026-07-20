@@ -49,6 +49,7 @@ async def top100() -> list[dict]:
             return [
                 {
                     "rank": entry["rank"],
+                    "product_id": entry["product_id"],
                     "name": entry["name"],
                     "platform": entry["platform"],
                     "price": entry["price"],

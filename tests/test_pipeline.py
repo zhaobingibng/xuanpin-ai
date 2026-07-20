@@ -138,5 +138,6 @@ class TestProcessBatch:
         assert kwargs["viewers"] == 1200
         assert kwargs["sales_24h"] == 350
         assert kwargs["image"] == "https://img.example.com/earphone.jpg"
-        # category should NOT be in db kwargs (Product model doesn't have it yet)
-        assert "category" not in kwargs
+        # category and url are now included in db kwargs
+        assert kwargs["category"] == "数码"
+        assert "url" in kwargs
