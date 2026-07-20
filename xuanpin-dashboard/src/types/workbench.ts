@@ -122,3 +122,23 @@ export const MARKET_TAG_TYPE: Record<string, '' | 'success' | 'warning' | 'dange
   MEDIUM: 'warning',
   HIGH: 'danger',
 }
+
+/** LLM product analysis result. */
+export interface LLMProductAnalysis {
+  summary: string
+  tags: string[]
+  market_insight: string
+  selling_points: string[]
+  risks: string[]
+  recommendation: 'SELL' | 'TEST' | 'WATCH' | 'DROP'
+  confidence: number
+}
+
+/** LLM report summary result. */
+export interface LLMReportSummary {
+  summary: string
+  highlights: string[]
+  warnings: string[]
+  action_items: string[]
+  market_trend: string
+}

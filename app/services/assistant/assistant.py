@@ -9,6 +9,7 @@ from typing import Any
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.llm_client import get_llm_client
 from app.database.assistant_repository import AssistantRepository
 from app.database.history_repository import HistoryRepository
 from app.database.knowledge_repository import KnowledgeRepository
@@ -17,6 +18,19 @@ from app.database.review_repository import ReviewRepository
 from app.services.analytics.analyzer import TrendAnalyzer
 from app.services.competition.analyzer import CompetitionAnalyzer
 from app.services.product_service import ProductService
+
+# LLM 分类 prompt
+_CLASSIFY_SYSTEM_PROMPT = """你是一个问题分类器。根据用户问题，判断其属于以下哪个类别：
+- recommend: 推荐类（推荐、卖什么、爆款、热卖、值得卖、选品）
+- trend: 趋势类（上涨、趋势、增长、涨势、走势、行情）
+- risk: 风险类（风险、不要卖、竞争、避开、红海、慎选）
+- strategy: 运营方案类（文案、运营方案、怎么卖、写文案、营销、推广方案、话术）
+- product: 商品查询类（包含具体商品名称，如蓝牙耳机、手机壳等）
+- unknown: 无法分类
+
+请只返回类别名称，不要有其他内容。"""
+
+_CLASSIFY_USER_PROMPT = "请分类以下问题：{question}"
 
 
 # ── Question categories ────────────────────────────────────────
@@ -72,6 +86,13 @@ class SelectionAssistant:
         category = self._classify(question)
         logger.info("[Assistant] 问题='{}' 分类={}", question, category)
 
+        # 对 unknown 类问题尝试 LLM 分类增强
+        if category == "unknown":
+            llm_category = await self._classify_with_llm(question)
+            if llm_category and llm_category != "unknown":
+                category = llm_category
+                logger.info("[Assistant] LLM 重新分类: {} -> {}", question, category)
+
         if category == "recommend":
             result = await self._handle_recommend(question)
         elif category == "trend":
@@ -84,6 +105,9 @@ class SelectionAssistant:
             result = await self._handle_product(question)
         else:
             result = self._handle_unknown(question)
+
+        # LLM 增强回答（可选，失败不影响）
+        await self._enhance_response(question, result)
 
         # 保存问答历史
         try:
@@ -118,6 +142,97 @@ class SelectionAssistant:
                 return "product"
         # 尝试匹配已有商品名称 → product 类
         return "unknown"
+
+    async def _classify_with_llm(self, question: str) -> str | None:
+        """使用 LLM 对 unknown 类问题进行二次分类。
+
+        LLM 不可用或失败时返回 None，调用方保持原 unknown 处理。
+        """
+        try:
+            client = get_llm_client()
+            if not client.available:
+                return None
+
+            user_prompt = _CLASSIFY_USER_PROMPT.format(question=question)
+            result = await client.chat(
+                user_prompt=user_prompt,
+                system_prompt=_CLASSIFY_SYSTEM_PROMPT,
+                temperature=0.1,
+                timeout=5.0,  # 快速超时，不影响体验
+            )
+
+            if result is None:
+                return None
+
+            # 解析 LLM 返回的类别
+            category = result.strip().lower()
+            valid_categories = {"recommend", "trend", "risk", "strategy", "product", "unknown"}
+            if category in valid_categories:
+                return category
+            return None
+
+        except Exception as e:
+            logger.debug("[Assistant] LLM 分类失败: {}", e)
+            return None
+
+    async def _enhance_response(self, question: str, result: dict[str, Any]) -> None:
+        """使用 LLM 增强回答内容（可选）。
+
+        在已有结构化回答基础上，附加 LLM 洞察。
+        LLM 不可用或失败时静默跳过，不修改 result。
+        """
+        try:
+            client = get_llm_client()
+            if not client.available:
+                return
+
+            # 仅对有实质内容的回答进行增强
+            if not result.get("answer") or result.get("answer", "").startswith("抱歉"):
+                return
+
+            # 构建上下文
+            context = self._build_enhance_context(result)
+            if not context:
+                return
+
+            user_prompt = f"用户问题：{question}\n\n已有回答：{result['answer']}\n\n补充信息：{context}"
+            system_prompt = """你是电商选品助手。请在已有回答的基础上，补充一条简短的专业洞察（20字以内）。
+只返回洞察内容，不要有其他内容。如果无法补充，返回空字符串。"""
+
+            insight = await client.chat(
+                user_prompt=user_prompt,
+                system_prompt=system_prompt,
+                temperature=0.5,
+                timeout=5.0,
+            )
+
+            if insight and insight.strip():
+                # 添加到 insights 列表
+                if "insights" not in result:
+                    result["insights"] = []
+                result["insights"].append(f"AI 洞察: {insight.strip()}")
+                logger.debug("[Assistant] LLM 增强洞察: {}", insight.strip())
+
+        except Exception as e:
+            logger.debug("[Assistant] LLM 增强失败: {}", e)
+
+    @staticmethod
+    def _build_enhance_context(result: dict[str, Any]) -> str:
+        """构建 LLM 增强的上下文。"""
+        parts = []
+
+        # 商品列表
+        products = result.get("products", [])
+        if products:
+            names = [p.get("name", "") for p in products[:3]]
+            parts.append(f"涉及商品: {', '.join(names)}")
+
+        # 已有洞察
+        insights = result.get("insights", [])
+        if insights:
+            parts.append(f"数据洞察: {'; '.join(insights[:2])}")
+
+        return "\n".join(parts)
 
     # ── Handlers ──────────────────────────────────────────────
 

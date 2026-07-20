@@ -228,6 +228,30 @@ async def daily_crawl_job(
             logger.error("[Job:{}] {}", job_id, error_msg)
             result["errors"].append(error_msg)
 
+    # ── Step 5b: LLM report summary (optional) ────────────────
+    if save_to_db:
+        logger.info("[Job:{}] Step 5b: LLM report summary…", job_id)
+        try:
+            from app.database.base import get_async_session_factory
+            from app.database.report_repository import ReportRepository
+            from app.services.ai_analysis.report_summarizer import LLMReportSummarizer
+
+            session_factory = get_async_session_factory()
+            async with session_factory() as session:
+                report_repo = ReportRepository(session)
+                report = await report_repo.get_latest()
+                if report:
+                    summarizer = LLMReportSummarizer()
+                    summary = await summarizer.summarize(report)
+                    if summary:
+                        result["llm_report_summary"] = summary.get("summary", "")[:200]
+                        logger.info("[Job:{}] LLM report summary: {}", job_id, result["llm_report_summary"][:50])
+                    else:
+                        logger.debug("[Job:{}] LLM report summary skipped (unavailable)", job_id)
+        except Exception as e:
+            # LLM 失败不影响其他步骤
+            logger.debug("[Job:{}] LLM report summary error: {}", job_id, e)
+
     # ── Step 6: Generate daily recommendation ──────────────────
     if save_to_db:
         logger.info("[Job:{}] Step 6: Generating daily recommendation…", job_id)
@@ -332,6 +356,44 @@ async def daily_crawl_job(
             error_msg = f"Strategy error: {e}"
             logger.error("[Job:{}] {}", job_id, error_msg)
             result["errors"].append(error_msg)
+
+    # ── Step 10b: LLM product analysis (optional) ─────────────
+    if save_to_db:
+        logger.info("[Job:{}] Step 10b: LLM product analysis…", job_id)
+        try:
+            from app.database.base import get_async_session_factory
+            from app.database.product_repository import ProductRepository
+            from app.services.ai_analysis.product_analyzer import LLMProductAnalyzer
+            from sqlalchemy import select
+            from app.models.product import Product
+
+            session_factory = get_async_session_factory()
+            async with session_factory() as session:
+                # 获取 TOP 3 商品（按 ai_score 排序）
+                stmt = select(Product).where(Product.status == "ACTIVE").order_by(Product.ai_score.desc()).limit(3)
+                query_result = await session.execute(stmt)
+                top_products = list(query_result.scalars().all())
+
+                if top_products:
+                    analyzer = LLMProductAnalyzer()
+                    llm_analyses = []
+                    for product in top_products:
+                        analysis = await analyzer.analyze(product)
+                        if analysis:
+                            llm_analyses.append({
+                                "product_id": product.id,
+                                "name": product.name,
+                                "summary": analysis.get("summary", "")[:100],
+                                "recommendation": analysis.get("recommendation", "WATCH"),
+                            })
+                    if llm_analyses:
+                        result["llm_product_analyses"] = llm_analyses
+                        logger.info("[Job:{}] LLM analyzed {} products", job_id, len(llm_analyses))
+                    else:
+                        logger.debug("[Job:{}] LLM product analysis skipped (unavailable)", job_id)
+        except Exception as e:
+            # LLM 失败不影响其他步骤
+            logger.debug("[Job:{}] LLM product analysis error: {}", job_id, e)
 
     # ── Step 11: Archive stale products ───────────────────────
     if save_to_db:

@@ -26,6 +26,11 @@ const routes: RouteRecordRaw[] = [
     name: 'ShopRegistry',
     component: () => import('@/views/ShopRegistry.vue'),
   },
+  {
+    path: '/ai-analysis',
+    name: 'AIAnalysis',
+    component: () => import('@/views/AIAnalysis.vue'),
+  },
 ]
 
 const router = createRouter({

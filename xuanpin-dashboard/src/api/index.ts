@@ -9,6 +9,8 @@ import type {
   Opportunity,
   AssistantResponse,
   StrategyRecord,
+  LLMProductAnalysis,
+  LLMReportSummary,
 } from '@/types/workbench'
 import type { Shop, ShopCreateRequest, ShopUpdateRequest } from '@/types/shop'
 
@@ -102,6 +104,32 @@ export function updateShop(id: number, data: ShopUpdateRequest) {
 
 export function deleteShop(id: number) {
   return api.delete<{ message: string }>(`/api/shops/${id}`)
+}
+
+// ── AI 分析 ─────────────────────────────────────────
+export function getLLMStatus() {
+  return api.get<{ available: boolean; model?: string; reason?: string }>('/api/ai-analysis/status')
+}
+
+export function analyzeProductWithLLM(productId: number) {
+  return api.post<{
+    product_id: number
+    product_name: string
+    ai_score: number
+    llm_analysis?: LLMProductAnalysis
+    error?: string
+    fallback?: boolean
+  }>(`/api/ai-analysis/product/${productId}`)
+}
+
+export function summarizeReportWithLLM(reportId: number) {
+  return api.post<{
+    report_id: number
+    report_date: string
+    llm_summary?: LLMReportSummary
+    error?: string
+    fallback?: boolean
+  }>(`/api/ai-analysis/report/${reportId}/summary`)
 }
 
 export default api
