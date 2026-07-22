@@ -182,6 +182,34 @@ class DashboardService:
             for t in tasks
         ]
 
+    async def get_task_history(
+        self, task_name: str, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """获取指定任务的执行历史。
+
+        复用 TaskExecutionRepository.get_by_task，不新增查询逻辑。
+
+        Args:
+            task_name: 任务名称（如 system_health_check）。
+            limit: 返回记录数量限制。
+
+        Returns:
+            该任务的执行记录列表（按开始时间倒序）。
+        """
+        tasks = await self._task_repo.get_by_task(task_name, limit=limit)
+        return [
+            {
+                "id": t.id,
+                "task_name": t.task_name,
+                "start_time": t.start_time.isoformat() if t.start_time else None,
+                "end_time": t.end_time.isoformat() if t.end_time else None,
+                "status": t.status,
+                "duration": t.duration,
+                "error": t.error,
+            }
+            for t in tasks
+        ]
+
     def get_notifications(self, limit: int = 50) -> list[dict[str, Any]]:
         """获取通知历史。
 

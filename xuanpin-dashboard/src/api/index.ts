@@ -147,4 +147,94 @@ export function toggleSelection(enabled: boolean) {
   return api.post<{ enabled: boolean; message: string }>('/system/selection/toggle', { enabled })
 }
 
+// ── 淘宝人工辅助采集 (Phase 42.6) ──────────────────────
+
+export interface TaobaoStatus {
+  state: string
+  is_logged_in: boolean
+  is_blocked: boolean
+  block_reason: string
+  last_check: string | null
+  last_crawl: string | null
+  last_crawl_keyword: string
+  last_crawl_count: number
+  session_started: string | null
+  message: string
+  product_count: number
+}
+
+export function getTaobaoStatus() {
+  return api.get<TaobaoStatus>('/dashboard/taobao/status')
+}
+
+export function startTaobaoSession() {
+  return api.post('/dashboard/taobao/start')
+}
+
+export function stopTaobaoSession() {
+  return api.post('/dashboard/taobao/stop')
+}
+
+export function checkTaobaoSession() {
+  return api.post('/dashboard/taobao/check')
+}
+
+export function crawlTaobao(keyword: string, limit: number = 10) {
+  return api.post('/dashboard/taobao/crawl', { keyword, limit })
+}
+
+export function waitHumanTaobao() {
+  return api.post('/dashboard/taobao/wait-human')
+}
+
+// ── 定时任务管理 (Phase 45.4) ──────────────────────
+
+export interface TaskDefinition {
+  name: string
+  func: string
+  trigger: string
+  trigger_kwargs: Record<string, number>
+  enabled: boolean
+}
+
+export interface SchedulerJob {
+  id: string
+  name: string
+  next_run: string | null
+  trigger: string
+}
+
+export interface TaskExecution {
+  id: number
+  task_name: string
+  start_time: string | null
+  end_time: string | null
+  status: string
+  duration: number | null
+  error: string | null
+}
+
+export interface TaskRunResult {
+  success: boolean
+  task_name: string
+  result: Record<string, any>
+}
+
+export function getTaskDefinitions() {
+  return api.get<TaskDefinition[]>('/dashboard/tasks/definitions')
+}
+
+export function getSchedulerJobs() {
+  return api.get<SchedulerJob[]>('/dashboard/scheduler/jobs')
+}
+
+export function getTaskHistory(name: string, limit = 20) {
+  return api.get<TaskExecution[]>(`/dashboard/tasks/${name}/history`, { params: { limit } })
+}
+
+export function runTask(name: string) {
+  // 手动执行可能触发真实采集/匹配，放宽超时
+  return api.post<TaskRunResult>(`/dashboard/tasks/${name}/run`, undefined, { timeout: 120000 })
+}
+
 export default api

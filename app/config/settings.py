@@ -34,7 +34,7 @@ class AppSettings(BaseSettings):
     ai_base_url: str = "https://api.deepseek.com"
 
     # Browser
-    browser_headless: bool = True
+    browser_headless: bool = False  # Phase 42.6: 淘宝人工辅助采集需要可见浏览器
     browser_timeout: int = 30000
     browser_user_agent: str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
     browser_user_data_dir: str = "./storage/browser_profile"
@@ -68,7 +68,7 @@ class AppSettings(BaseSettings):
         "美妆",
     ]
     daily_crawl_limit: int = 100
-    crawl_platforms: list[str] = ["xiaohongshu"]
+    crawl_platforms: list[str] = ["xiaohongshu", "taobao"]
 
     # Xiaohongshu anti-bot cooldown (seconds between keyword crawls)
     xhs_cooldown_min: int = 60

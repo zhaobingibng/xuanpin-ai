@@ -34,9 +34,19 @@ class TestCrawlSettings:
         assert settings.daily_crawl_limit == 100
 
     def test_default_crawl_platforms(self):
-        """crawl_platforms 默认值应为 ['xiaohongshu']。"""
+        """crawl_platforms 默认值应包含 xiaohongshu 和 taobao。"""
         settings = AppSettings()
-        assert settings.crawl_platforms == ["xiaohongshu"]
+        assert settings.crawl_platforms == ["xiaohongshu", "taobao"]
+
+    def test_taobao_enabled_in_default_platforms(self):
+        """taobao 应在默认采集平台中启用。"""
+        settings = AppSettings()
+        assert "taobao" in settings.crawl_platforms
+
+    def test_xiaohongshu_preserved_in_default_platforms(self):
+        """xiaohongshu 应保留在默认采集平台中。"""
+        settings = AppSettings()
+        assert "xiaohongshu" in settings.crawl_platforms
 
     def test_crawl_keywords_type(self):
         """crawl_keywords 应为 list[str]。"""

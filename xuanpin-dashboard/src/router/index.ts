@@ -31,6 +31,16 @@ const routes: RouteRecordRaw[] = [
     name: 'AIAnalysis',
     component: () => import('@/views/AIAnalysis.vue'),
   },
+  {
+    path: '/tasks',
+    name: 'TaskCenter',
+    component: () => import('@/views/TaskCenter.vue'),
+  },
+  {
+    path: '/tasks/:name',
+    name: 'TaskHistory',
+    component: () => import('@/views/TaskHistory.vue'),
+  },
 ]
 
 const router = createRouter({

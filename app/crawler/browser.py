@@ -6,6 +6,7 @@ Enhanced with UserAgentManager, behavior simulation, and page crash recovery.
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 from typing import TYPE_CHECKING
 
@@ -132,10 +133,26 @@ class BrowserManager:
 
         Persistent 模式使用 launch_persistent_context，
         保存完整浏览器状态（cookie / localStorage / IndexedDB）。
+
+        环境变量 TAOBAO_BROWSER_HEADLESS 可临时覆盖 headless 配置：
+            TAOBAO_BROWSER_HEADLESS=false   → 可见浏览器（调试用）
+            TAOBAO_BROWSER_HEADLESS=true    → 无头模式
+            未设置                           → 使用 settings.browser_headless
         """
         if self._playwright is not None:
             return
         self._playwright = await async_playwright().start()
+
+        # 允许通过环境变量临时覆盖 headless 配置（用于反爬诊断）
+        _headless_override = os.getenv("TAOBAO_BROWSER_HEADLESS")
+        if _headless_override is not None:
+            _headless = _headless_override.lower() in ("true", "1", "yes", "on")
+            logger.info(
+                "Browser headless overridden by TAOBAO_BROWSER_HEADLESS={}: {}",
+                _headless_override, "headless" if _headless else "visible",
+            )
+        else:
+            _headless = self._settings.browser_headless
 
         if self._persistent:
             from pathlib import Path
@@ -143,14 +160,14 @@ class BrowserManager:
             Path(self._user_data_dir).mkdir(parents=True, exist_ok=True)
             self._persistent_ctx = await self._playwright.chromium.launch_persistent_context(
                 user_data_dir=self._user_data_dir,
-                headless=self._settings.browser_headless,
+                headless=_headless,
                 locale="zh-CN",
                 viewport={"width": 375, "height": 812},
             )
             logger.info("Browser started (persistent: {})", self._user_data_dir)
         else:
             self._browser = await self._playwright.chromium.launch(
-                headless=self._settings.browser_headless,
+                headless=_headless,
             )
             logger.info("Browser started")
 

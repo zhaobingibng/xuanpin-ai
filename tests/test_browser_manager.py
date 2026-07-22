@@ -324,7 +324,7 @@ class TestBrowserSettings:
         from app.config.settings import get_settings
         get_settings.cache_clear()
         s = get_settings()
-        assert s.browser_headless is True
+        assert s.browser_headless is False  # Phase 42.6: 可见浏览器模式
 
     def test_browser_timeout_default(self):
         from app.config.settings import get_settings

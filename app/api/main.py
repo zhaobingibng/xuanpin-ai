@@ -7,8 +7,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from app.api.assistant import router as assistant_router
+from app.api.admin import router as admin_router
 from app.api.ai_analysis import router as ai_analysis_router
+from app.api.assistant import router as assistant_router
 from app.api.crawler import router as crawler_router
 from app.api.dashboard import router as dashboard_router
 from app.api.knowledge import router as knowledge_router
@@ -27,12 +28,14 @@ from app.api.selection import router as selection_router
 from app.api.shops import router as shops_router
 
 _scheduler_instance = None
+_scheduler_manager = None
+_task_registry = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: start/stop scheduler."""
-    global _scheduler_instance
+    global _scheduler_instance, _scheduler_manager, _task_registry
     try:
         from app.config.settings import get_settings
         from app.tasks.scheduler import TaskScheduler
@@ -51,7 +54,40 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Scheduler auto-registered daily_crawl at {:02d}:00", settings.daily_crawl_hour)
     except Exception as e:
         logger.warning("Scheduler startup failed: {}", e)
+
+    # ── Phase 44.1: SchedulerManager (new base layer) ──────────
+    try:
+        from app.scheduler import SchedulerManager
+
+        _scheduler_manager = SchedulerManager()
+
+        # ── Phase 45.2: 接通 Phase 44 定时任务到运行中的调度器 ──
+        try:
+            from app.tasks.bootstrap import bootstrap_tasks
+
+            _task_registry, synced = bootstrap_tasks(_scheduler_manager)
+            logger.info(
+                "[SchedulerManager] Phase 44 tasks bootstrapped: {} synced",
+                synced,
+            )
+        except Exception as e:
+            logger.warning("[SchedulerManager] task bootstrap failed: {}", e)
+
+        _scheduler_manager.start()
+    except Exception as e:
+        logger.warning("[SchedulerManager] startup failed: {}", e)
+
     yield
+
+    # ── Shutdown SchedulerManager ──────────────────────────────
+    if _scheduler_manager is not None:
+        try:
+            _scheduler_manager.shutdown(wait=False)
+        except Exception as e:
+            logger.warning("[SchedulerManager] shutdown error: {}", e)
+        _scheduler_manager = None
+        _task_registry = None
+
     if _scheduler_instance is not None:
         _scheduler_instance.stop()
         _scheduler_instance = None
@@ -68,6 +104,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(admin_router)
 app.include_router(assistant_router)
 app.include_router(ai_analysis_router)
 app.include_router(crawler_router)
