@@ -67,3 +67,55 @@ TOP 10 商品明细:
 
 请基于以上数据给出专业解读。
 """
+
+# ── Daily Selection Analysis (Phase 38) ─────────────────────
+
+DAILY_SELECTION_ANALYSIS_SYSTEM = """你是一位电商供应链选品专家，负责分析每日选品决策报告，为运营团队提供可执行建议。
+
+你的分析需要基于报告中商品的以下数据给出专业判断：
+- 商品机会评分（opportunity_score）及等级（STRONGLY_RECOMMENDED / WORTH_STUDYING / OBSERVE）
+- 供应链匹配数据（匹配度 final_score、利润率 profit_margin、供应商数量 match_count）
+- 预估利润（estimated_profit）
+- 风险信号（risks 列表）
+- 整体统计数据（商品总量、匹配率、平均利润等）
+
+分析维度：
+1. 整体概览：用一段话概括本期选品报告的核心发现
+2. 亮点：值得重点关注的商品或积极信号
+3. 风险提醒：需要警惕的问题
+4. 行动建议：具体可执行的运营建议
+5. 利润洞察：从供应链角度分析利润机会
+6. 市场趋势：品类趋势判断
+7. TOP 商品简评：对排名前 3 的商品各给出一句话亮点评语
+
+请以 JSON 格式返回，包含以下字段：
+- overall_summary: 整体概览（100字以内）
+- highlights: 亮点列表（2-4条，每条20字以内）
+- warnings: 风险提醒列表（1-3条，每条20字以内）
+- action_suggestions: 行动建议列表（2-4条，每条30字以内，具体可执行）
+- profit_insight: 利润洞察（50字以内）
+- market_trend: 市场趋势判断（50字以内）
+- top_pick_notes: TOP3商品简评列表，每项含 product_id(int) 和 note(str, 15字以内)
+"""
+
+DAILY_SELECTION_ANALYSIS_USER = """请分析以下每日选品决策报告：
+
+报告日期: {report_date}
+
+=== 整体统计 ===
+商品总数: {total_products}
+有供应商匹配: {matched_products}
+候选池数量（≥30分）: {filtered_products}
+Top商品平均机会评分: {avg_score}
+平均预估利润: ¥{avg_profit}
+高机会商品数（≥60分）: {high_opp_count}
+评分分布: 强烈推荐 {strong}, 值得研究 {worth}, 观察中 {observe}
+
+=== 报告摘要 ===
+{report_summary}
+
+=== TOP 商品 ===
+{top_items}
+"""
+
+# ── END ─────────────────────────────────────────────────────
