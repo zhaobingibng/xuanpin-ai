@@ -142,3 +142,51 @@ export interface LLMReportSummary {
   action_items: string[]
   market_trend: string
 }
+
+/** AI Insights from DailySelectionAnalyzer (Phase 38). */
+export interface AiInsights {
+  ai_available: boolean
+  overall_summary?: string
+  highlights?: string[]
+  warnings?: string[]
+  action_suggestions?: string[]
+  profit_insight?: string
+  market_trend?: string
+  top_pick_notes?: { product_name: string; note: string }[]
+  error?: string
+}
+
+/** Daily selection report from /api/selection/daily (Phase 39). */
+export interface DailySelectionReport {
+  date: string
+  generated_at: string
+  status: string
+  stats: {
+    total_products: number
+    matched_products: number
+    total_matches: number
+    match_errors: number
+    duration: number
+  }
+  report: {
+    top_products: DailySelectionProduct[]
+    statistics: Record<string, unknown>
+    summary: string
+    ai_insights?: AiInsights
+  }
+}
+
+export interface DailySelectionProduct {
+  rank: number
+  product_id: number
+  name: string
+  platform: string
+  image: string
+  price: number
+  score: number
+  level: string
+  reasons: string[]
+  supplier_info?: Record<string, unknown> | null
+  estimated_profit?: number | null
+  risks?: string[]
+}

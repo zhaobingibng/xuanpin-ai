@@ -13,6 +13,7 @@ import type {
   LLMReportSummary,
 } from '@/types/workbench'
 import type { Shop, ShopCreateRequest, ShopUpdateRequest } from '@/types/shop'
+import type { DailySelectionReport } from '@/types/workbench'
 
 const api = axios.create({
   baseURL: 'http://127.0.0.1:8000',
@@ -130,6 +131,11 @@ export function summarizeReportWithLLM(reportId: number) {
     error?: string
     fallback?: boolean
   }>(`/api/ai-analysis/report/${reportId}/summary`)
+}
+
+// ── 每日选品报告（Pipeline + AI 分析）─────────────────────
+export function getDailySelectionReport() {
+  return api.get<DailySelectionReport>('/api/selection/daily')
 }
 
 export default api

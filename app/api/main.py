@@ -22,6 +22,7 @@ from app.api.strategy import router as strategy_router
 from app.api.system import router as system_router
 from app.api.metrics import router as metrics_router
 from app.api.tasks import router as tasks_router
+from app.api.selection import router as selection_router
 from app.api.shops import router as shops_router
 
 _scheduler_instance = None
@@ -66,6 +67,7 @@ app.include_router(strategy_router)
 app.include_router(system_router)
 app.include_router(metrics_router)
 app.include_router(tasks_router)
+app.include_router(selection_router)
 app.include_router(shops_router)
 
 
