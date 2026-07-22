@@ -57,6 +57,7 @@ class AppSettings(BaseSettings):
 
     # Daily Pipeline
     daily_crawl_hour: int = 8
+    daily_selection_enabled: bool = True
     crawl_keywords: list[str] = [
         "蓝牙耳机",
         "手机配件",

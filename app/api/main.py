@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from app.api.assistant import router as assistant_router
@@ -39,6 +40,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings = get_settings()
         _scheduler_instance = TaskScheduler()
         _scheduler_instance.add_auto_crawl(hour=settings.daily_crawl_hour)
+
+        if settings.daily_selection_enabled:
+            _scheduler_instance.add_daily_selection()
+            logger.info(
+                "Scheduler auto-registered daily_selection (enabled via DAILY_SELECTION_ENABLED)",
+            )
+
         _scheduler_instance.start()
         logger.info("Scheduler auto-registered daily_crawl at {:02d}:00", settings.daily_crawl_hour)
     except Exception as e:
@@ -50,6 +58,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="xuanpin-ai API", lifespan=lifespan)
+
+# ── CORS ────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(assistant_router)
 app.include_router(ai_analysis_router)

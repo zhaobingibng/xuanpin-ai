@@ -138,4 +138,13 @@ export function getDailySelectionReport() {
   return api.get<DailySelectionReport>('/api/selection/daily')
 }
 
+// ── AI 自动选品开关 ─────────────────────────────────────
+export function getSelectionStatus() {
+  return api.get<{ enabled: boolean }>('/system/selection/status')
+}
+
+export function toggleSelection(enabled: boolean) {
+  return api.post<{ enabled: boolean; message: string }>('/system/selection/toggle', { enabled })
+}
+
 export default api

@@ -48,13 +48,23 @@
         </el-card>
       </el-col>
       <el-col :span="12">
-        <el-card class="entry-card" shadow="hover" @click="router.push('/workbench')">
+        <el-card class="entry-card toggle-card" shadow="hover">
           <div class="entry-content">
-            <span class="entry-icon">&#129302;</span>
+            <span class="entry-icon">{{ selectionEnabled ? '&#128994;' : '&#128308;' }}</span>
             <div>
-              <h3 class="entry-title">AI运营工作台</h3>
-              <p class="entry-desc">进入智能推荐、机会分析、文案生成一站式工作台</p>
+              <h3 class="entry-title">
+                {{ selectionEnabled ? 'AI自动选品已开启' : 'AI自动选品已关闭' }}
+              </h3>
+              <p class="entry-desc">{{ selectionEnabled ? '每日自动运行选品流水线' : '定时选品任务已暂停' }}</p>
             </div>
+            <el-switch
+              v-model="selectionEnabled"
+              :loading="selectionToggling"
+              inline-prompt
+              active-text="开"
+              inactive-text="关"
+              @change="handleSelectionToggle"
+            />
           </div>
         </el-card>
       </el-col>
@@ -68,7 +78,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Loading } from '@element-plus/icons-vue'
-import { getHealth } from '@/api'
+import { getHealth, getSelectionStatus, toggleSelection } from '@/api'
 import TopRankingTable from '@/components/TopRankingTable.vue'
 import CategoryChart from '@/components/CategoryChart.vue'
 import PlatformChart from '@/components/PlatformChart.vue'
@@ -81,6 +91,8 @@ interface HealthInfo {
 const router = useRouter()
 const loading = ref(true)
 const health = ref<HealthInfo | null>(null)
+const selectionEnabled = ref(false)
+const selectionToggling = ref(false)
 
 onMounted(async () => {
   try {
@@ -91,7 +103,26 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  // Fetch selection status
+  try {
+    const { data } = await getSelectionStatus()
+    selectionEnabled.value = data.enabled
+  } catch {
+    // ignore — toggle disabled if API unreachable
+  }
 })
+
+async function handleSelectionToggle(val: boolean) {
+  selectionToggling.value = true
+  try {
+    await toggleSelection(val)
+  } catch {
+    // Revert on failure
+    selectionEnabled.value = !val
+  } finally {
+    selectionToggling.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -144,5 +175,9 @@ onMounted(async () => {
   margin: 0;
   font-size: 14px;
   color: #909399;
+}
+
+.toggle-card :deep(.entry-content) {
+  justify-content: space-between;
 }
 </style>
