@@ -7,8 +7,9 @@
     2. 供应链匹配        ← SupplierMatchingService.match_products_with_matcher()
     3. 机会评分          ← OpportunityScorer.calculate()
     4. 生成选品日报      ← DailySelectionReportGenerator.generate()
-    5. 记录执行结果      ← TaskExecutionRepository (RUNNING → SUCCESS/FAILED)
-    6. 返回结构化报告
+    5. AI 分析（可选）   ← DailySelectionAnalyzer.analyze()
+    6. 记录执行结果      ← TaskExecutionRepository (RUNNING → SUCCESS/FAILED)
+    7. 返回结构化报告
 
 设计原则：
     - **依赖注入**：所有下游 service 均可注入，内部不硬编码具体实例。
@@ -59,6 +60,7 @@ class DailySelectionPipeline:
             scorer=my_scorer,
             report_generator=my_generator,
             task_repo=my_task_repo,
+            ai_analyzer=my_ai_analyzer,       # optional
         )
         result = await pipeline.run(session)
 
@@ -101,6 +103,7 @@ class DailySelectionPipeline:
         scorer: OpportunityScorer | None = None,
         report_generator: DailySelectionReportGenerator | None = None,
         task_repo: Any = None,
+        ai_analyzer: Any = None,
     ) -> None:
         """初始化编排器。
 
@@ -116,10 +119,14 @@ class DailySelectionPipeline:
             task_repo: 提供 ``async create(record)`` / ``async finish(...)``
                 的执行记录仓库。None → 运行时以 session 构造
                 ``TaskExecutionRepository``。
+            ai_analyzer: 提供 ``async analyze(report: dict) -> dict``
+                的 AI 分析器（如 DailySelectionAnalyzer）。None → 跳过 AI 分析。
+                AI 异常自动降级，不影响日报生成。
         """
         # 无 session 依赖的组件可直接持有默认实例（无状态、可复用）。
         self._scorer = scorer or OpportunityScorer()
         self._report_generator = report_generator or DailySelectionReportGenerator()
+        self._ai_analyzer = ai_analyzer
 
         # 有 session 依赖的组件保存注入值；None 时在 run() 内按需构造。
         self._product_service = product_service
@@ -230,7 +237,10 @@ class DailySelectionPipeline:
                     session, record_id, started, stats, stage="report", error=e,
                 )
 
-            # ── 5-6. 记录成功 + 返回 ───────────────────────────
+            # ── 5. AI 分析（可选，自动降级）───────────────────
+            await self._run_ai_analysis(report)
+
+            # ── 6. 记录成功 + 返回 ───────────────────────────
             return await self._succeed(session, record_id, started, stats, report)
 
         except Exception as e:  # noqa: BLE001 — 兜底，绝不外抛
@@ -238,6 +248,34 @@ class DailySelectionPipeline:
             return await self._fail(
                 session, record_id, started, stats, stage="pipeline", error=e,
             )
+
+    # ── AI 分析 ───────────────────────────────────────────────
+
+    async def _run_ai_analysis(self, report: dict[str, Any]) -> None:
+        """对报告执行 AI 分析（可选步骤）。
+
+        AI 分析器存在且可用时调用 ``ai_analyzer.analyze(report)``，
+        将结果写入 ``report["ai_insights"]``。
+
+        任何异常均自动降级：记录警告日志，将降级标记写入 report，
+        不阻断主流程，日报正常返回。
+        """
+        if self._ai_analyzer is None:
+            return
+
+        try:
+            ai_insights = await self._ai_analyzer.analyze(report)
+            report["ai_insights"] = ai_insights
+            logger.info(
+                "[SelectionPipeline] AI 分析完成: available={}",
+                ai_insights.get("ai_available", False),
+            )
+        except Exception as e:  # noqa: BLE001 — AI 失败只告警，不阻断
+            logger.warning("[SelectionPipeline] AI 分析失败（自动降级）: {}", e)
+            report["ai_insights"] = {
+                "ai_available": False,
+                "error": f"{type(e).__name__}: {e}",
+            }
 
     # ── 执行记录（TaskExecution）────────────────────────────────
 

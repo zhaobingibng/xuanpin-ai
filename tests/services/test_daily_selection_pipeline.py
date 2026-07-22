@@ -129,6 +129,7 @@ def _build_pipeline(
     task_repo: MagicMock | None = None,
     scorer=None,
     report_generator=None,
+    ai_analyzer=None,
 ) -> tuple[DailySelectionPipeline, MagicMock]:
     """Convenience builder returning (pipeline, task_repo)."""
     repo = task_repo or _make_task_repo()
@@ -140,6 +141,7 @@ def _build_pipeline(
         scorer=scorer,
         report_generator=report_generator,
         task_repo=repo,
+        ai_analyzer=ai_analyzer,
     )
     return pipeline, repo
 
@@ -706,3 +708,278 @@ class TestDefaults:
 
         # commit invoked for create + finish tracking.
         assert session.commit.await_count >= 1
+
+
+# ═══════════════════════════════════════════════════════════════
+# AI 分析器集成 (Phase 38.3)
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestAIAnalyzerIntegration:
+    """DailySelectionAnalyzer 集成测试。
+
+    覆盖 5 个场景：
+      1. AI analyzer 调用成功
+      2. AI 结果正确合并到 report["ai_insights"]
+      3. AI 异常不影响 pipeline
+      4. 未注入 AI analyzer 时行为一致
+      5. 多次运行状态隔离
+    """
+
+    @pytest.fixture
+    def _make_ai_analyzer(self):
+        """Create a mock AI analyzer with async analyze()."""
+        def _build(return_value=None, side_effect=None):
+            mock = MagicMock()
+            if side_effect is not None:
+                mock.analyze = AsyncMock(side_effect=side_effect)
+            else:
+                mock.analyze = AsyncMock(return_value=return_value or {
+                    "ai_available": True,
+                    "overall_summary": "AI 分析总结",
+                    "highlights": ["亮点1", "亮点2"],
+                    "warnings": [],
+                    "action_suggestions": ["建议1"],
+                    "profit_insight": "利润分析",
+                    "market_trend": "市场趋势",
+                    "top_pick_notes": [],
+                })
+            return mock
+        return _build
+
+    # ── 场景 1: AI analyzer 调用成功 ──────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_ai_analyzer_called_on_success(self, _make_ai_analyzer):
+        """注入 AI analyzer 后，pipeline 成功时调用 analyze()。"""
+        ai = _make_ai_analyzer()
+        products = [_make_product(1), _make_product(2, "机械键盘")]
+        pipeline, _ = _build_pipeline(
+            products, matches=[_make_supplier_match(1)], ai_analyzer=ai,
+        )
+        session = _make_session()
+
+        result = await pipeline.run(session)
+
+        assert result["status"] == "success"
+        ai.analyze.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_ai_analyzer_receives_report_dict(self, _make_ai_analyzer):
+        """analyze() 接收的参数为 pipeline 生成的 report dict。"""
+        ai = _make_ai_analyzer()
+        products = [_make_product(1)]
+        pipeline, _ = _build_pipeline(
+            products, matches=[_make_supplier_match(1)], ai_analyzer=ai,
+        )
+        session = _make_session()
+
+        await pipeline.run(session)
+
+        args, _ = ai.analyze.await_args
+        report_arg = args[0]
+        assert isinstance(report_arg, dict)
+        assert "top_products" in report_arg
+        assert "statistics" in report_arg
+
+    # ── 场景 2: AI 结果正确合并 ───────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_ai_insights_merged_into_report(self, _make_ai_analyzer):
+        """AI 分析结果应写入 report["ai_insights"]。"""
+        expected = {
+            "ai_available": True,
+            "overall_summary": "总结文案",
+            "highlights": ["高利润商品"],
+            "warnings": [],
+            "action_suggestions": ["建议"],
+            "profit_insight": "利润可观",
+            "market_trend": "趋势良好",
+            "top_pick_notes": [],
+        }
+        ai = _make_ai_analyzer(return_value=expected)
+        products = [_make_product(1)]
+        pipeline, _ = _build_pipeline(
+            products, matches=[_make_supplier_match(1)], ai_analyzer=ai,
+        )
+        session = _make_session()
+
+        result = await pipeline.run(session)
+
+        assert "ai_insights" in result["report"]
+        assert result["report"]["ai_insights"] == expected
+
+    @pytest.mark.asyncio
+    async def test_ai_insights_not_overwrite_existing_keys(self, _make_ai_analyzer):
+        """ai_insights 只新增字段，不覆盖已有 report 键。"""
+        ai = _make_ai_analyzer()
+        products = [_make_product(1)]
+        pipeline, _ = _build_pipeline(
+            products, matches=[_make_supplier_match(1)], ai_analyzer=ai,
+        )
+        session = _make_session()
+
+        result = await pipeline.run(session)
+
+        report = result["report"]
+        # 原有字段保留
+        assert "top_products" in report
+        assert "statistics" in report
+        assert "ai_insights" in report
+
+    # ── 场景 3: AI 异常不影响 pipeline ────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_ai_exception_does_not_break_pipeline(self, _make_ai_analyzer):
+        """AI analyzer 抛异常 → pipeline 仍返回 success。"""
+        ai = _make_ai_analyzer(side_effect=RuntimeError("LLM API down"))
+        products = [_make_product(1)]
+        pipeline, _ = _build_pipeline(
+            products, matches=[_make_supplier_match(1)], ai_analyzer=ai,
+        )
+        session = _make_session()
+
+        result = await pipeline.run(session)
+
+        assert result["status"] == "success"
+        assert result["report"] is not None
+        assert "top_products" in result["report"]
+
+    @pytest.mark.asyncio
+    async def test_ai_exception_sets_degraded_insights(self, _make_ai_analyzer):
+        """AI 异常后 report["ai_insights"] 包含降级标记。"""
+        ai = _make_ai_analyzer(side_effect=ValueError("bad input"))
+        products = [_make_product(1)]
+        pipeline, _ = _build_pipeline(
+            products, matches=[_make_supplier_match(1)], ai_analyzer=ai,
+        )
+        session = _make_session()
+
+        result = await pipeline.run(session)
+
+        insights = result["report"]["ai_insights"]
+        assert insights["ai_available"] is False
+        assert "error" in insights
+        assert "ValueError" in insights["error"]
+
+    @pytest.mark.asyncio
+    async def test_ai_timeout_does_not_break_pipeline(self, _make_ai_analyzer):
+        """AI 超时异常 → pipeline 正常完成。"""
+        ai = _make_ai_analyzer(side_effect=TimeoutError("LLM timeout"))
+        products = [_make_product(1)]
+        pipeline, _ = _build_pipeline(
+            products, matches=[_make_supplier_match(1)], ai_analyzer=ai,
+        )
+        session = _make_session()
+
+        result = await pipeline.run(session)
+
+        assert result["status"] == "success"
+        assert result["report"]["ai_insights"]["ai_available"] is False
+
+    @pytest.mark.asyncio
+    async def test_ai_failure_still_marks_task_success(self, _make_ai_analyzer):
+        """AI 失败后 TaskExecution 仍标记 SUCCESS。"""
+        ai = _make_ai_analyzer(side_effect=RuntimeError("fail"))
+        products = [_make_product(1)]
+        repo = _make_task_repo()
+        pipeline, _ = _build_pipeline(
+            products,
+            matches=[_make_supplier_match(1)],
+            ai_analyzer=ai,
+            task_repo=repo,
+        )
+        session = _make_session()
+
+        await pipeline.run(session)
+
+        _, kwargs = repo.finish.await_args
+        assert kwargs["status"] == "SUCCESS"
+
+    # ── 场景 4: 未注入 AI analyzer 时行为一致 ─────────────────
+
+    @pytest.mark.asyncio
+    async def test_no_ai_analyzer_default_behavior(self):
+        """默认 pipeline（无 ai_analyzer）行为不变。"""
+        products = [_make_product(1), _make_product(2)]
+        pipeline, _ = _build_pipeline(products, matches=[_make_supplier_match(1)])
+        session = _make_session()
+
+        result = await pipeline.run(session)
+
+        assert result["status"] == "success"
+        assert "report" in result
+        # 未注入时 report 中不应有 ai_insights
+        assert "ai_insights" not in result["report"]
+
+    @pytest.mark.asyncio
+    async def test_no_ai_analyzer_report_structure_unchanged(self):
+        """未注入 AI → report 结构与 Phase 37.1 完全一致。"""
+        products = [_make_product(1)]
+        pipeline, _ = _build_pipeline(products, matches=[_make_supplier_match(1)])
+        session = _make_session()
+
+        result = await pipeline.run(session)
+
+        report = result["report"]
+        assert "top_products" in report
+        assert "statistics" in report
+        assert report["statistics"]["total_products"] == 1
+        assert report["statistics"]["matched_products"] >= 0
+
+    @pytest.mark.asyncio
+    async def test_no_ai_analyzer_empty_products_unchanged(self):
+        """未注入 AI + 空商品 → behavior unchanged."""
+        pipeline, _ = _build_pipeline([])
+        session = _make_session()
+
+        result = await pipeline.run(session)
+
+        assert result["status"] == "success"
+        assert result["report"]["top_products"] == []
+        assert "ai_insights" not in result["report"]
+
+    # ── 场景 5: 多次运行状态隔离 ─────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_multiple_runs_ai_insights_independent(self, _make_ai_analyzer):
+        """两次运行产出的 ai_insights 彼此独立。"""
+        call_count = 0
+
+        async def _analyze(report):
+            nonlocal call_count
+            call_count += 1
+            return {"ai_available": True, "run": call_count,
+                    "overall_summary": f"run {call_count}",
+                    "highlights": [], "warnings": [], "action_suggestions": [],
+                    "profit_insight": "", "market_trend": "", "top_pick_notes": []}
+
+        ai = _make_ai_analyzer(side_effect=_analyze)
+        products = [_make_product(1)]
+        pipeline, _ = _build_pipeline(
+            products, matches=[_make_supplier_match(1)], ai_analyzer=ai,
+        )
+
+        r1 = await pipeline.run(_make_session())
+        r2 = await pipeline.run(_make_session())
+
+        assert r1["status"] == "success"
+        assert r2["status"] == "success"
+        assert r1["report"]["ai_insights"]["run"] == 1
+        assert r2["report"]["ai_insights"]["run"] == 2
+        # 两次结果引用不同
+        assert r1["report"]["ai_insights"] is not r2["report"]["ai_insights"]
+
+    @pytest.mark.asyncio
+    async def test_ai_analyzer_called_twice_for_two_runs(self, _make_ai_analyzer):
+        """两次 run() 各调用一次 analyze()。"""
+        ai = _make_ai_analyzer()
+        products = [_make_product(1)]
+        pipeline, _ = _build_pipeline(
+            products, matches=[_make_supplier_match(1)], ai_analyzer=ai,
+        )
+
+        await pipeline.run(_make_session())
+        await pipeline.run(_make_session())
+
+        assert ai.analyze.await_count == 2
