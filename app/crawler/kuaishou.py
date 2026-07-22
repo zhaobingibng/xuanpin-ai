@@ -2,6 +2,7 @@
 
 from loguru import logger
 
+from app.config.crawler import crawler_settings
 from app.crawler.base import BaseCrawler
 from app.crawler.models.schemas import RawProduct
 
@@ -85,7 +86,7 @@ class KuaishouCrawler(BaseCrawler):
                 logger.debug("[kuaishou] Page {}/{}: {}", page_num, max_pages, url)
 
                 await page.goto(url, wait_until="networkidle")
-                await page.wait_for_timeout(3000)
+                await page.wait_for_timeout(crawler_settings.post_search_wait_ms)
                 await self._scroll_page(page, times=3, delay_ms=2500)
 
                 cards = await page.query_selector_all(

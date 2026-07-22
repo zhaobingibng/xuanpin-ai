@@ -8,6 +8,8 @@ import random
 from loguru import logger
 
 from app.config.settings import get_settings
+from app.config.scheduler import scheduler_settings
+from app.config.crawler import crawler_settings
 from app.crawler import (
     CrawlerManager,
     DouyinCrawler,
@@ -56,7 +58,7 @@ async def _verify_xhs_300012(crawler: XiaohongshuCrawler) -> bool:
         await page.goto(
             "https://www.xiaohongshu.com/explore",
             wait_until="domcontentloaded",
-            timeout=15000,
+            timeout=crawler_settings.anti_bot_probe_timeout_ms,
         )
         url = page.url
         await ctx.close()  # closes probe page via _ContextProxy
@@ -80,7 +82,7 @@ async def _verify_xhs_300012(crawler: XiaohongshuCrawler) -> bool:
 async def crawl_all_platforms(
     keywords: list[str] | None = None,
     platforms: list[str] | None = None,
-    max_pages: int = 3,
+    max_pages: int | None = None,
 ) -> list[RawProduct]:
     """执行全平台采集，返回 RawProduct 列表。
 
@@ -96,6 +98,8 @@ async def crawl_all_platforms(
     """
     keywords = keywords or DEFAULT_KEYWORDS
     platforms = platforms or list(PLATFORM_CRAWLERS.keys())
+    if max_pages is None:
+        max_pages = scheduler_settings.crawl_max_pages
 
     logger.info(
         "开始每日采集 — keywords={}, platforms={}",

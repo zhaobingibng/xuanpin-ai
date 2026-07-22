@@ -195,6 +195,7 @@ async def daily_crawl_job(
         try:
             from app.database.base import get_async_session_factory
             from app.services.product_service import ProductService
+            from app.services.product_scoring import ProductScoringService
 
             session_factory = get_async_session_factory()
             async with session_factory() as session:
@@ -206,6 +207,23 @@ async def daily_crawl_job(
                 result["updated_count"] = save_result["updated_count"]
                 result["history_count"] = save_result["history_count"]
                 result["failed_save_count"] = save_result["failed_count"]
+
+                # Step 4b: Save ai_score + ProductScore for each saved product
+                scoring_svc = ProductScoringService()
+                scored_count = 0
+                for product in save_result.get("saved_products", []):
+                    score_record = scoring_svc.create_score_record(product)
+                    product.ai_score = score_record.total_score
+                    session.add(score_record)
+                    scored_count += 1
+                await session.commit()
+                for product in save_result.get("saved_products", []):
+                    await session.refresh(product)
+                result["scored_count"] = scored_count
+                logger.info(
+                    "[Job:{}] Scored {} products (ai_score + ProductScore)",
+                    job_id, scored_count,
+                )
         except Exception as e:
             error_msg = f"DB save error: {e}"
             logger.error("[Job:{}] {}", job_id, error_msg)
@@ -518,43 +536,42 @@ async def daily_crawl_job(
     if save_to_db:
         logger.info("[Job:{}] Step 13: Supply chain matching…", job_id)
         try:
-            from sqlalchemy import select
             from app.database.base import get_async_session_factory
-            from app.models.product import Product
-            from app.services.supply_chain.matcher import SupplyChainMatcher
+            from app.database.product_repository import ProductRepository
+            from app.services.supplier_matching import SupplierMatchingService
+            from app.config.scheduler import scheduler_settings
 
             session_factory = get_async_session_factory()
             async with session_factory() as session:
-                # 获取 TOP 5 淘宝商品（按 ai_score 排序）
-                stmt = (
-                    select(Product)
-                    .where(Product.platform == "taobao", Product.status == "ACTIVE")
-                    .order_by(Product.ai_score.desc())
-                    .limit(5)
+                repo = ProductRepository(session)
+                new_products = await repo.find_new_products(limit=100)
+                match_svc = SupplierMatchingService()
+                total_matched = 0
+                match_errors = 0
+                for product in new_products:
+                    try:
+                        matches = await match_svc.match_products_with_matcher(
+                            session, product, top_k=3,
+                        )
+                        if matches:
+                            for m in matches:
+                                session.add(m)
+                            total_matched += 1
+                    except Exception as inner_e:
+                        match_errors += 1
+                        logger.warning(
+                            "[Job:{}] Match failed product_id={}: {}",
+                            job_id, product.id, inner_e,
+                        )
+                await session.commit()
+                result["matched_products"] = total_matched
+                result["match_errors"] = match_errors
+                logger.info(
+                    "[Job:{}] Matched {} products ({} errors)",
+                    job_id, total_matched, match_errors,
                 )
-                query_result = await session.execute(stmt)
-                taobao_products = list(query_result.scalars().all())
-
-                if taobao_products:
-                    matcher = SupplyChainMatcher(session)
-                    matches = await matcher.match_batch(taobao_products)
-                    result["supply_chain_matches"] = [
-                        {
-                            "product_id": m.product_id,
-                            "match_score": m.match_score,
-                            "profit_margin": m.profit_margin,
-                            "profit_amount": m.profit_amount,
-                        }
-                        for m in matches
-                    ]
-                    logger.info(
-                        "[Job:{}] Supply chain: {}/{} matched",
-                        job_id, len(matches), len(taobao_products),
-                    )
         except Exception as e:
-            # 供应链匹配失败不影响其他步骤
             logger.debug("[Job:{}] Supply chain matching error: {}", job_id, e)
-
     # ── Step 14: Daily selection report (Phase 16) ────────────
     if save_to_db:
         logger.info("[Job:{}] Step 14: Daily selection report…", job_id)
@@ -626,26 +643,18 @@ async def daily_pipeline_job(
     platforms: list[str] | None = None,
     max_pages: int = 3,
 ) -> dict:
-    """每日 Pipeline 定时任务入口。
+    """Daily pipeline job -- deprecated, kept for import compatibility."""
+    from app.tasks.crawler_jobs import crawl_all_platforms
 
-    调用 DailyPipeline.run_daily() 执行完整的
-    采集 → 清洗 → 保存 → 趋势分析 → 排行榜更新 流程。
-
-    Args:
-        keywords: 搜索关键词，None 使用默认列表。
-        platforms: 平台列表，None 使用全部平台。
-        max_pages: 每个关键词每个平台最大页数。
-
-    Returns:
-        Pipeline 执行结果摘要。
-    """
-    from app.tasks.pipeline import DailyPipeline
-
-    return await DailyPipeline.run_daily(
-        keywords=keywords,
-        platforms=platforms,
-        max_pages=max_pages,
+    raw = await crawl_all_platforms(
+        keywords=keywords, platforms=platforms, max_pages=max_pages,
     )
+    return {
+        "status": "deprecated",
+        "raw_count": len(raw),
+        "cleaned_count": 0,
+        "message": "Use `python -m app.cli daily` instead",
+    }
 
 
 async def auto_crawl_job() -> dict:

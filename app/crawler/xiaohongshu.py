@@ -5,6 +5,7 @@ Enhanced with multi-page collection, sort modes, and extended field parsing.
 
 from loguru import logger
 
+from app.config.crawler import crawler_settings
 from app.crawler.base import BaseCrawler
 from app.crawler.browser import random_delay, random_scroll, mouse_move
 from app.crawler.models.schemas import RawProduct
@@ -189,7 +190,7 @@ class XiaohongshuCrawler(BaseCrawler):
                 page = await self._browser_manager.safe_goto(
                     page, url, platform=self.PLATFORM
                 )
-                await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(crawler_settings.post_goto_wait_ms)
 
                 # 行为模拟：随机滚动 + 鼠标移动
                 await random_scroll(page, times=2)

@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.crawler.models.schemas import RawProduct
 from app.tasks.crawler_jobs import crawl_all_platforms, DEFAULT_KEYWORDS
 from app.tasks.analysis_jobs import analyze_products
-from app.tasks.pipeline import DailyPipeline
 from app.tasks.jobs import daily_pipeline_job
 from app.tasks.scheduler import TaskScheduler
 
@@ -189,116 +188,26 @@ class TestAnalyzeProducts:
 
 
 # ═══════════════════════════════════════════════════════════════
-# DailyPipeline
-# ═══════════════════════════════════════════════════════════════
-
-class TestDailyPipeline:
-    """Test DailyPipeline.run_daily()."""
-
-    @pytest.mark.asyncio
-    async def test_pipeline_runs(self):
-        """Pipeline should execute and return a summary dict."""
-        with patch("app.tasks.pipeline.crawl_all_platforms", new_callable=AsyncMock) as mock_crawl:
-            mock_crawl.return_value = []
-
-            result = await DailyPipeline.run_daily(
-                keywords=["测试"],
-                platforms=["xiaohongshu"],
-            )
-
-        assert "started_at" in result
-        assert "finished_at" in result
-        assert result["raw_count"] == 0
-        assert result["cleaned_count"] == 0
-        assert result["saved_count"] == 0
-        assert result["errors"] == []
-
-    @pytest.mark.asyncio
-    async def test_crawl_exception_does_not_crash(self):
-        """Crawl exception should be caught and reported in errors."""
-        with patch("app.tasks.pipeline.crawl_all_platforms", new_callable=AsyncMock) as mock_crawl:
-            mock_crawl.side_effect = Exception("Crawl failed")
-
-            result = await DailyPipeline.run_daily(
-                keywords=["测试"],
-                platforms=["xiaohongshu"],
-            )
-
-        assert len(result["errors"]) > 0
-        assert "Crawl failed" in result["errors"][0]
-        assert result["raw_count"] == 0
-
-    @pytest.mark.asyncio
-    async def test_analysis_exception_does_not_crash(self):
-        """Analysis exception should be caught and reported."""
-        raw_products = [_make_raw("蓝牙耳机")]
-
-        with (
-            patch("app.tasks.pipeline.crawl_all_platforms", new_callable=AsyncMock) as mock_crawl,
-            patch("app.database.base.get_async_session_factory") as mock_factory,
-        ):
-            mock_crawl.return_value = raw_products
-            mock_factory.side_effect = Exception("DB connection failed")
-
-            result = await DailyPipeline.run_daily(
-                keywords=["测试"],
-                platforms=["xiaohongshu"],
-            )
-
-        assert result["raw_count"] == 1
-        assert len(result["errors"]) > 0
-
-    @pytest.mark.asyncio
-    async def test_pipeline_duration_tracked(self):
-        """Result should include duration_seconds."""
-        with patch("app.tasks.pipeline.crawl_all_platforms", new_callable=AsyncMock) as mock_crawl:
-            mock_crawl.return_value = []
-
-            result = await DailyPipeline.run_daily()
-
-        assert "duration_seconds" in result
-        assert isinstance(result["duration_seconds"], float)
-
-    @pytest.mark.asyncio
-    async def test_empty_data_skips_analysis(self):
-        """When crawl returns empty, analysis step should be skipped."""
-        with patch("app.tasks.pipeline.crawl_all_platforms", new_callable=AsyncMock) as mock_crawl:
-            mock_crawl.return_value = []
-
-            result = await DailyPipeline.run_daily()
-
-        assert result["raw_count"] == 0
-        assert result["cleaned_count"] == 0
-        assert result["saved_count"] == 0
-        assert result["errors"] == []
-
-
-# ═══════════════════════════════════════════════════════════════
-# daily_pipeline_job
+# daily_pipeline_job (deprecated)
 # ═══════════════════════════════════════════════════════════════
 
 class TestDailyPipelineJob:
-    """Test daily_pipeline_job function."""
+    """Test daily_pipeline_job function (deprecated)."""
 
     @pytest.mark.asyncio
-    async def test_calls_pipeline(self):
-        """Should delegate to DailyPipeline.run_daily."""
-        expected = {"raw_count": 0, "errors": []}
-
-        with patch("app.tasks.pipeline.DailyPipeline") as mock_pipeline:
-            mock_pipeline.run_daily = AsyncMock(return_value=expected)
+    async def test_returns_deprecated_result(self):
+        """Should return a deprecation status dict."""
+        with patch("app.tasks.crawler_jobs.crawl_all_platforms", new_callable=AsyncMock) as mock_crawl:
+            mock_crawl.return_value = []
 
             result = await daily_pipeline_job(
                 keywords=["测试"],
                 platforms=["xiaohongshu"],
             )
 
-        assert result == expected
-        mock_pipeline.run_daily.assert_called_once_with(
-            keywords=["测试"],
-            platforms=["xiaohongshu"],
-            max_pages=3,
-        )
+        assert result["status"] == "deprecated"
+        assert result["raw_count"] == 0
+        assert "Use `python -m app.cli daily` instead" in result["message"]
 
 
 # ═══════════════════════════════════════════════════════════════

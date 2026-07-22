@@ -5,6 +5,8 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.requests import Request
+from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app.api.admin import router as admin_router
@@ -16,6 +18,7 @@ from app.api.knowledge import router as knowledge_router
 from app.api.learning import router as learning_router
 from app.api.products import router as products_router
 from app.api.ranking import router as ranking_router
+from app.api.recommendation_pool import router as recommendation_pool_router
 from app.api.recommendations import router as recommendations_router
 from app.api.reports import router as reports_router
 from app.api.reviews import router as reviews_router
@@ -95,6 +98,63 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="xuanpin-ai API", lifespan=lifespan)
 
+# ── Global Exception Handlers (Phase 47.3) ─────────────────
+
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all for unhandled exceptions → structured 500 response.
+
+    Routes that already handle their own exceptions (raising HTTPException)
+    are NOT affected — this only fires for truly unhandled errors.
+    """
+    from app.core.exceptions import BaseAppException
+
+    if isinstance(exc, BaseAppException):
+        logger.warning(
+            "[API] AppException: code={} message={}",
+            exc.code, exc.message,
+        )
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": {
+                    "code": exc.code,
+                    "message": exc.message,
+                    "details": exc.details or None,
+                },
+            },
+        )
+
+    # ValueError from services → 422 (backward-compatible)
+    if isinstance(exc, ValueError):
+        logger.warning("[API] ValueError: {}", exc)
+        return JSONResponse(
+            status_code=422,
+            content={
+                "success": False,
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": str(exc),
+                },
+            },
+        )
+
+    # Unknown exception → 500
+    logger.exception("[API] Unhandled exception: {}", exc)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "服务器内部错误",
+            },
+        },
+    )
+
+
 # ── CORS ────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
@@ -113,6 +173,7 @@ app.include_router(knowledge_router)
 app.include_router(learning_router)
 app.include_router(products_router)
 app.include_router(ranking_router)
+app.include_router(recommendation_pool_router)
 app.include_router(recommendations_router)
 app.include_router(reports_router)
 app.include_router(reviews_router)

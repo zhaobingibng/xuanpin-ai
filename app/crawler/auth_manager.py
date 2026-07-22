@@ -17,6 +17,8 @@ from typing import Any
 
 from loguru import logger
 
+from app.config.crawler import crawler_settings
+
 
 class LoginStatus(str, Enum):
     """Login status enumeration (mirrors model)."""
@@ -255,8 +257,8 @@ class AuthManager:
             else:
                 return False, None
 
-            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-            await page.wait_for_timeout(2000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=crawler_settings.anti_bot_probe_timeout_ms)
+            await page.wait_for_timeout(crawler_settings.post_goto_wait_ms)
 
             for sel in login_selectors:
                 el = await page.query_selector(sel)

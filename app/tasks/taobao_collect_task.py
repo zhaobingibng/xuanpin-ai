@@ -67,6 +67,7 @@ async def taobao_daily_collect(ctx: TaskContext) -> None:
         ctx: 任务运行上下文。
     """
     from app.config.settings import get_settings
+    from app.config.scheduler import scheduler_settings
     from app.crawler.taobao import TaobaoCrawler
 
     ctx.log("淘宝新品采集任务开始")
@@ -75,7 +76,7 @@ async def taobao_daily_collect(ctx: TaskContext) -> None:
     settings = get_settings()
     keywords = list(settings.crawl_keywords)
     limit = settings.daily_crawl_limit
-    max_pages = 1
+    max_pages = scheduler_settings.taobao_max_pages
 
     ctx.add_metadata("platform", "taobao")
     ctx.add_metadata("keywords", keywords)
@@ -150,6 +151,7 @@ def register_taobao_collect_task(registry: Any) -> Any:
     Returns:
         注册的 TaskDefinition。
     """
+    from app.config.scheduler import scheduler_settings
     from app.tasks.execution_logger import TaskExecutionLogger
 
     execution_logger = TaskExecutionLogger()
@@ -171,6 +173,6 @@ def register_taobao_collect_task(registry: Any) -> Any:
         name="taobao_daily_collect",
         func=_taobao_collect_wrapped,
         trigger="cron",
-        hour=2,
-        minute=0,
+        hour=scheduler_settings.taobao_collect_hour,
+        minute=scheduler_settings.taobao_collect_minute,
     )

@@ -46,6 +46,7 @@ async def supplier_matching_task(ctx: TaskContext) -> None:
         ctx: 任务运行上下文。
     """
     from app.config.settings import get_settings
+    from app.config.scheduler import scheduler_settings
     from app.database.base import get_async_session_factory
     from app.database.product_repository import ProductRepository
     from app.services.supplier_matching import SupplierMatchingService
@@ -55,7 +56,7 @@ async def supplier_matching_task(ctx: TaskContext) -> None:
 
     settings = get_settings()
     limit = settings.daily_crawl_limit
-    top_k = 3
+    top_k = scheduler_settings.matching_top_k
 
     ctx.add_metadata("top_k", top_k)
 
@@ -125,6 +126,7 @@ def register_supplier_matching_task(registry: Any) -> Any:
     Returns:
         注册的 TaskDefinition。
     """
+    from app.config.scheduler import scheduler_settings
     from app.tasks.execution_logger import TaskExecutionLogger
 
     execution_logger = TaskExecutionLogger()
@@ -146,6 +148,6 @@ def register_supplier_matching_task(registry: Any) -> Any:
         name="supplier_matching",
         func=_supplier_matching_wrapped,
         trigger="cron",
-        hour=4,
-        minute=0,
+        hour=scheduler_settings.supplier_matching_hour,
+        minute=scheduler_settings.supplier_matching_minute,
     )

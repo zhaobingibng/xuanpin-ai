@@ -14,6 +14,15 @@ import type {
 } from '@/types/workbench'
 import type { Shop, ShopCreateRequest, ShopUpdateRequest } from '@/types/shop'
 import type { DailySelectionReport } from '@/types/workbench'
+import type {
+  PoolListResponse,
+  PoolStats,
+  PoolDetail,
+  UpdateStatusRequest,
+  UpdateStatusResponse,
+  PublishResponse,
+  PublishHistoryResponse,
+} from '@/types/recommendation'
 
 const api = axios.create({
   baseURL: 'http://127.0.0.1:8000',
@@ -235,6 +244,58 @@ export function getTaskHistory(name: string, limit = 20) {
 export function runTask(name: string) {
   // 手动执行可能触发真实采集/匹配，放宽超时
   return api.post<TaskRunResult>(`/dashboard/tasks/${name}/run`, undefined, { timeout: 120000 })
+}
+
+// ── 推荐池管理 (Phase 46.2) ──────────────────────────
+
+export function getRecommendationPool(params?: {
+  status?: string
+  min_score?: number
+  platform?: string
+  report_date?: string
+  limit?: number
+  offset?: number
+}) {
+  return api.get<PoolListResponse>('/recommendation-pool', { params })
+}
+
+export function getRecommendationPoolStats(report_date?: string) {
+  return api.get<PoolStats>('/recommendation-pool/stats', {
+    params: report_date ? { report_date } : undefined,
+  })
+}
+
+export function getRecommendationPoolDetail(productId: number, report_date?: string) {
+  return api.get<PoolDetail>(`/recommendation-pool/${productId}`, {
+    params: report_date ? { report_date } : undefined,
+  })
+}
+
+export function updatePoolStatus(productId: number, body: UpdateStatusRequest) {
+  return api.patch<UpdateStatusResponse>(
+    `/recommendation-pool/${productId}/status`,
+    body
+  )
+}
+
+// ── 推荐池发布 (Phase 46.4) ────────────────────────
+
+export function publishProduct(productId: number, params?: {
+  platform?: string
+  report_date?: string
+}) {
+  return api.post<PublishResponse>(
+    `/recommendation-pool/${productId}/publish`,
+    null,
+    { params }
+  )
+}
+
+export function getPublishHistory(productId: number, limit?: number) {
+  return api.get<PublishHistoryResponse>(
+    `/recommendation-pool/${productId}/publish-history`,
+    { params: { limit: limit ?? 20 } }
+  )
 }
 
 export default api

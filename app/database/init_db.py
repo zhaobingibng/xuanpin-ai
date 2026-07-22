@@ -33,7 +33,9 @@ from app.models import (  # noqa: F401
     ProductStrategy,
     ProductTag,
     ProductTagRelation,
+    RecommendationPublishRecord,
     RecommendationReview,
+    RecommendationStatus,
     ScoringConfig,
     ShopRegistry,
     SupplierMatch,
@@ -66,6 +68,8 @@ REQUIRED_TABLES = [
     "product_tags",
     "product_tag_relations",
     "recommendation_reviews",
+    "recommendation_status",
+    "recommendation_publish_records",
     "scoring_configs",
     "supply_chain_matches",
 ]

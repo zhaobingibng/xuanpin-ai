@@ -82,6 +82,17 @@
           </div>
         </el-card>
       </el-col>
+      <el-col :span="12">
+        <el-card class="entry-card" shadow="hover" @click="router.push('/recommendation-pool')">
+          <div class="entry-content">
+            <span class="entry-icon">&#128203;</span>
+            <div>
+              <h3 class="entry-title">推荐池</h3>
+              <p class="entry-desc">查看AI推荐商品、审核状态与供应商匹配</p>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
     </el-row>
 
     <!-- Phase 42.6: 淘宝人工辅助采集面板 -->

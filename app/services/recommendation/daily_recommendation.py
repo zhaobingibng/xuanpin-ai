@@ -8,6 +8,7 @@ from typing import Any
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config.recommendation import recommendation_settings
 from app.database.history_repository import HistoryRepository
 from app.database.knowledge_repository import KnowledgeRepository
 from app.database.recommendation_repository import RecommendationRepository
@@ -57,7 +58,7 @@ class DailyRecommendationService:
             {"date": str, "total": int, "items": list[dict]}
         """
         # 1. 获取候选商品
-        products = await self._product_service.list_all(limit=10_000)
+        products = await self._product_service.list_all(limit=recommendation_settings.product_list_limit)
 
         if not products:
             logger.info("[DailyRecommendation] 无商品数据")
@@ -81,7 +82,7 @@ class DailyRecommendationService:
                 competition_score=competition_result["competition_score"],
                 market_level=competition_result["market_level"],
             )
-            trend_score = 50.0
+            trend_score = recommendation_settings.trend_score_default
             if history and len(history) >= 2:
                 analyzer = TrendAnalyzer(history)
                 trend_score = analyzer.calculate_trend_score()["trend_score"]

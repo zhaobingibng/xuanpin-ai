@@ -9,6 +9,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.history_repository import HistoryRepository
+from app.models.product import Product
 from app.models.product_history import ProductHistory
 
 
@@ -40,6 +41,18 @@ class LifecycleAnalyzer:
         Returns:
             Dict with product_id, stage, score, signals.
         """
+        # 保护 WATCHING 状态，不被 AI 生命周期分析覆盖
+        product = await self._session.get(Product, product_id)
+        if product is not None:
+            stage = product.lifecycle_stage
+            if isinstance(stage, str) and stage == "WATCHING":
+                return {
+                    "product_id": product_id,
+                    "stage": "WATCHING",
+                    "score": 0,
+                    "signals": ["用户重点观察商品"],
+                }
+
         history = list(await self._history_repo.get_history(product_id, limit=30))
 
         # Filter to last 7 days

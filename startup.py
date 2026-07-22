@@ -37,7 +37,7 @@ async def startup() -> None:
     # ── Step 2: Logging setup ────────────────────────────────
     logger.info("[Startup] Step 2: Configuring logging…")
     try:
-        from app.core.logging_setup import setup_logging
+        from app.config.config import setup_logging
         setup_logging()
     except Exception as e:
         logger.warning("[Startup] Logging setup failed (using defaults): {}", e)

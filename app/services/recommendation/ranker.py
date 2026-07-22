@@ -6,15 +6,12 @@ from typing import Any
 
 from loguru import logger
 
+from app.config.recommendation import recommendation_settings
+
 
 # ── Lifecycle stage → numeric value ──────────────────────────
 
-_LIFECYCLE_VALUES: dict[str, float] = {
-    "HOT": 100.0,
-    "RISING": 85.0,
-    "NEW": 60.0,
-    "DECLINE": 20.0,
-}
+_LIFECYCLE_VALUES: dict[str, float] = recommendation_settings.lifecycle_values
 
 # ── Action → sort priority (lower = higher priority) ─────────
 
@@ -65,8 +62,8 @@ class RecommendationRanker:
         for item in products:
             knowledge_score = self._calculate_knowledge_score(item)
             recommend_score = self._calculate_recommend_score(item)
-            # 知识库加成: final = recommend + knowledge * 0.2
-            final_score = recommend_score + knowledge_score * 0.2
+            # 知识库加成: final = recommend + knowledge × weight
+            final_score = recommend_score + knowledge_score * recommendation_settings.knowledge_weight
             final_score = round(min(100.0, max(0.0, final_score)), 1)
             decision = item.get("decision", {})
             entry = {
@@ -110,12 +107,17 @@ class RecommendationRanker:
 
     @staticmethod
     def _calculate_recommend_score(item: dict[str, Any]) -> float:
-        """计算 recommend_score = score×0.5 + trend×0.25 + lifecycle×0.25。"""
+        """计算 recommend_score = score×w1 + trend×w2 + lifecycle×w3。"""
+        s = recommendation_settings
         ai_score = float(item.get("score", 0))
-        trend_score = float(item.get("trend_score", 50))
+        trend_score = float(item.get("trend_score", s.trend_score_default))
         lifecycle_value = _LIFECYCLE_VALUES.get(item.get("lifecycle", "NEW"), 60.0)
 
-        recommend = ai_score * 0.5 + trend_score * 0.25 + lifecycle_value * 0.25
+        recommend = (
+            ai_score * s.ai_score_weight
+            + trend_score * s.trend_score_weight
+            + lifecycle_value * s.lifecycle_weight
+        )
         return round(min(100.0, max(0.0, recommend)), 1)
 
     @staticmethod
@@ -123,13 +125,14 @@ class RecommendationRanker:
         """计算 knowledge_score（知识库加成）。
 
         基于 knowledge_tags 列表：
-          - 包含 SUCCESS_PATTERN 类型标签 → +20
-          - 包含 FAIL_PATTERN 类型标签 → -20
+          - 包含 SUCCESS_PATTERN 类型标签 → bonus
+          - 包含 FAIL_PATTERN 类型标签 → penalty
           - 可叠加（多个成功标签不重复加，多个失败标签不重复减）
 
         Returns:
-            knowledge_score 值（通常 -20 到 +20 之间）
+            knowledge_score 值（通常 penalty 到 bonus 之间）
         """
+        s = recommendation_settings
         tags = item.get("knowledge_tags", [])
         if not tags:
             return 0.0
@@ -139,7 +142,7 @@ class RecommendationRanker:
 
         score = 0.0
         if has_success:
-            score += 20.0
+            score += s.knowledge_bonus
         if has_fail:
-            score -= 20.0
+            score += s.knowledge_penalty
         return score

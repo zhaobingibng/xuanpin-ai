@@ -106,6 +106,12 @@ class TestParser:
         args = parser.parse_args([])
         assert args.command is None
 
+    def test_daily_command(self):
+        """daily 命令无需参数即可解析。"""
+        parser = build_parser()
+        args = parser.parse_args(["daily"])
+        assert args.command == "daily"
+
 
 class TestCommands:
     """Test CLI command functions (async)."""

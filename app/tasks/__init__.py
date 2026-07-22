@@ -5,7 +5,6 @@ from app.tasks.execution_logger import TaskExecutionLogger
 from app.tasks.context import TaskContext
 from app.tasks.health_check_task import register_health_check_task, system_health_check
 from app.tasks.jobs import auto_crawl_job, daily_crawl_job, daily_pipeline_job
-from app.tasks.pipeline import DailyPipeline
 from app.tasks.recommendation_task import (
     recommendation_task,
     register_recommendation_task,
@@ -35,7 +34,6 @@ __all__ = [
     "register_supplier_matching_task",
     "recommendation_task",
     "register_recommendation_task",
-    "DailyPipeline",
     "daily_crawl_job",
     "daily_pipeline_job",
     "auto_crawl_job",

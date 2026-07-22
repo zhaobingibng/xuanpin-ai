@@ -13,6 +13,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from app.config.crawler import crawler_settings
 from app.crawler.base import BaseCrawler
 from app.crawler.browser import random_delay, random_scroll, mouse_move
 from app.crawler.models.schemas import RawProduct
@@ -127,7 +128,7 @@ class Alibaba1688Crawler(BaseCrawler):
             page = await context.new_page()
             timeout = self._settings.login_check_timeout * 1000
             await page.goto(self.BASE_URL, wait_until="domcontentloaded", timeout=timeout)
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(crawler_settings.post_goto_wait_ms)
 
             # Check for login indicators
             login_selectors = [
@@ -251,7 +252,7 @@ class Alibaba1688Crawler(BaseCrawler):
                 page = await self._browser_manager.safe_goto(
                     page, url, platform=self.PLATFORM
                 )
-                await page.wait_for_timeout(3000)
+                await page.wait_for_timeout(crawler_settings.post_search_wait_ms)
                 await random_scroll(page, times=2)
                 await mouse_move(page)
                 await random_delay(800, 1500)
@@ -394,7 +395,7 @@ class Alibaba1688Crawler(BaseCrawler):
         
         try:
             # 等待数据加载（最多5秒）
-            for _ in range(10):
+            for _ in range(crawler_settings.scroll_loop_count):
                 # 尝试读取 window.data.offerV2
                 offer_data = await page.evaluate("""
                     () => {
@@ -414,7 +415,7 @@ class Alibaba1688Crawler(BaseCrawler):
                     logger.debug("[1688 JS] Data found: {}", type(offer_data))
                     break
                 
-                await page.wait_for_timeout(500)
+                await page.wait_for_timeout(crawler_settings.scroll_wait_ms)
             
             if not offer_data:
                 logger.debug("[1688 JS] No data in window.data or __INITIAL_STATE__")

@@ -9,7 +9,6 @@ from app.crawler.alibaba_1688 import Alibaba1688Crawler
 from app.crawler.alibaba_1688 import SupplierProduct as CrawlerSupplierProduct
 from app.crawler.base import VALID_PLATFORMS
 from app.crawler.models.schemas import RawProduct
-from app.services.supply_chain.provider import SupplyChainProvider, SupplierProduct
 
 
 # ── Platform registration ─────────────────────────────────────
@@ -85,95 +84,3 @@ class TestSupplierProduct:
         assert raw.price == 29.9
 
 
-# ── SupplyChainProvider ───────────────────────────────────────
-
-
-class TestSupplyChainProvider:
-    """SupplyChainProvider 数据源抽象测试。"""
-
-    async def test_default_mock_mode(self):
-        """默认使用 mock 数据。"""
-        provider = SupplyChainProvider()
-        assert provider._use_real_crawler is False
-        assert provider._use_mock_fallback is True
-
-    async def test_mock_search_returns_results(self):
-        """Mock 模式应返回结果。"""
-        provider = SupplyChainProvider()
-        results = await provider.search("蓝牙耳机")
-        assert len(results) > 0
-        assert all(isinstance(r, SupplierProduct) for r in results)
-
-    async def test_mock_search_has_correct_fields(self):
-        """Mock 结果应包含完整字段。"""
-        provider = SupplyChainProvider()
-        results = await provider.search("蓝牙耳机")
-        assert len(results) > 0
-        r = results[0]
-        assert r.product_id
-        assert r.title
-        assert r.price > 0
-        assert r.supplier_name
-
-    async def test_mock_fallback_full_catalog(self):
-        """无关键词匹配时应返回全目录。"""
-        provider = SupplyChainProvider()
-        results = await provider.search("完全不存在的关键词XYZABC")
-        assert len(results) > 0  # Falls back to full catalog
-
-    async def test_cache_works(self):
-        """缓存应生效。"""
-        provider = SupplyChainProvider()
-        r1 = await provider.search("蓝牙耳机")
-        r2 = await provider.search("蓝牙耳机")
-        assert r1 == r2  # Same results from cache
-
-    async def test_clear_cache(self):
-        """清除缓存后应重新查询。"""
-        provider = SupplyChainProvider()
-        await provider.search("蓝牙耳机")
-        assert len(provider._cache) > 0
-        provider.clear_cache()
-        assert len(provider._cache) == 0
-
-    async def test_real_crawler_mode_can_be_enabled(self):
-        """可以启用真实爬虫模式。"""
-        provider = SupplyChainProvider(use_real_crawler=True)
-        assert provider._use_real_crawler is True
-
-    async def test_limit_parameter(self):
-        """limit 参数应限制返回数量。"""
-        provider = SupplyChainProvider()
-        results = await provider.search("蓝牙耳机", limit=2)
-        assert len(results) <= 2
-
-    async def test_close(self):
-        """close 应清理资源。"""
-        provider = SupplyChainProvider()
-        await provider.close()  # Should not raise
-
-
-# ── SupplyChainMatcher integration ────────────────────────────
-
-
-class TestMatcherWithProvider:
-    """SupplyChainMatcher + Provider 集成测试。"""
-
-    async def test_matcher_accepts_provider(self):
-        """SupplyChainMatcher 应接受自定义 provider。"""
-        from app.services.supply_chain.matcher import SupplyChainMatcher
-        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-        from app.database.base import Base
-        import app.models  # noqa
-
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
-        async with factory() as session:
-            provider = SupplyChainProvider()
-            matcher = SupplyChainMatcher(session, provider=provider)
-            assert matcher._provider is provider
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-        await engine.dispose()

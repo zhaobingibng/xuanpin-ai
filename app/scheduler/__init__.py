@@ -1,7 +1,7 @@
 """Scheduler module — unified task scheduling infrastructure (Phase 44.1).
 
 Provides SchedulerManager as the base scheduling layer using APScheduler's
-AsyncIOScheduler. This module is business-logic-free — concrete jobs live
+AsyncIOScheduler. This module is business-logic-free -- concrete jobs live
 in app/tasks/ or are registered externally.
 
 Usage::

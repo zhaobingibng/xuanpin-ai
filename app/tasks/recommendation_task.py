@@ -54,6 +54,22 @@ async def recommendation_task(ctx: TaskContext) -> None:
             service = DailyRecommendationService(session)
             report = await service.generate()
 
+            # Phase 46.3: 同步推荐结果到推荐池
+            from datetime import date as dt_date
+
+            from app.services.recommendation.pool_initializer import (
+                RecommendationPoolInitializer,
+            )
+
+            report_date_str = report.get("date", dt_date.today().isoformat())
+            sync_date = dt_date.fromisoformat(report_date_str)
+            try:
+                init = RecommendationPoolInitializer(session)
+                init_result = await init.sync(sync_date)
+                ctx.log(f"推荐池同步: synced={init_result['synced']}, skipped={init_result['skipped']}")
+            except Exception as sync_err:
+                ctx.log(f"推荐池同步失败（不影响推荐结果）: {sync_err}")
+
         total = int(report.get("total", 0))
         recommended = len(report.get("items", []))
         failed = max(total - recommended, 0)
@@ -94,6 +110,7 @@ def register_recommendation_task(registry: Any) -> Any:
     Returns:
         注册的 TaskDefinition。
     """
+    from app.config.scheduler import scheduler_settings
     from app.tasks.execution_logger import TaskExecutionLogger
 
     execution_logger = TaskExecutionLogger()
@@ -115,6 +132,6 @@ def register_recommendation_task(registry: Any) -> Any:
         name="daily_recommendation",
         func=_recommendation_wrapped,
         trigger="cron",
-        hour=6,
-        minute=0,
+        hour=scheduler_settings.daily_recommendation_hour,
+        minute=scheduler_settings.daily_recommendation_minute,
     )

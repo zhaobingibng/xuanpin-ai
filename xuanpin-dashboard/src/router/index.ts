@@ -41,6 +41,11 @@ const routes: RouteRecordRaw[] = [
     name: 'TaskHistory',
     component: () => import('@/views/TaskHistory.vue'),
   },
+  {
+    path: '/recommendation-pool',
+    name: 'RecommendationPool',
+    component: () => import('@/views/RecommendationPool.vue'),
+  },
 ]
 
 const router = createRouter({

@@ -1,4 +1,4 @@
-"""SchedulerManager — base scheduling layer wrapping APScheduler's AsyncIOScheduler.
+"""SchedulerManager -- base scheduling layer wrapping APScheduler's AsyncIOScheduler.
 
 Phase 44.1: pure infrastructure, no business logic.
 """
@@ -13,13 +13,7 @@ from loguru import logger
 
 
 class SchedulerManager:
-    """管理 APScheduler AsyncIOScheduler 的生命周期和任务注册。
-
-    职责：
-    - 创建 AsyncIOScheduler 实例
-    - start() / shutdown() 控制调度器启停
-    - add_job() / remove_job() / get_jobs() 任务管理
-    - 统一日志输出
+    """Manage APScheduler AsyncIOScheduler lifecycle and job registration.
 
     Usage::
 
@@ -34,39 +28,32 @@ class SchedulerManager:
         self._scheduler: AsyncIOScheduler = AsyncIOScheduler()
         self._running: bool = False
 
-    # ── Lifecycle ─────────────────────────────────────────────
+    # -- Lifecycle --------------------------------------------------------------
 
     def start(self) -> None:
-        """启动调度器。
-
-        幂等：重复调用不报错，仅首次启动生效。
-        """
+        """Start the scheduler. Idempotent."""
         if self._running:
             logger.info("[Scheduler] Already running, skipping start")
             return
-
         self._scheduler.start()
         self._running = True
         job_count = len(self._scheduler.get_jobs())
-        logger.info("[Scheduler] Started — {} job(s) registered", job_count)
+        logger.info("[Scheduler] Started -- {} job(s) registered", job_count)
 
     def shutdown(self, wait: bool = True) -> None:
-        """关闭调度器。
-
-        幂等：重复调用不报错，仅首次关闭生效。
+        """Shutdown the scheduler. Idempotent.
 
         Args:
-            wait: 是否等待正在执行的任务完成（默认 True）。
+            wait: Whether to wait for running jobs (default True).
         """
         if not self._running:
             logger.info("[Scheduler] Already stopped, skipping shutdown")
             return
-
         self._scheduler.shutdown(wait=wait)
         self._running = False
         logger.info("[Scheduler] Shutdown complete")
 
-    # ── Job management ────────────────────────────────────────
+    # -- Job management ---------------------------------------------------------
 
     def add_job(
         self,
@@ -77,29 +64,22 @@ class SchedulerManager:
         replace_existing: bool = True,
         **trigger_kwargs: Any,
     ) -> Job:
-        """注册一个定时任务。
+        """Register a scheduled job.
 
         Args:
-            func: async 可调用对象（协程函数）。
-            trigger: APScheduler trigger 实例或字符串（"cron", "interval", "date"）。
-            job_id: 任务唯一标识（可选，不传则自动生成）。
-            name: 人类可读的任务名称。
-            replace_existing: 是否替换同 ID 的已有任务（默认 True）。
-            **trigger_kwargs: 传递给 trigger 的参数（如 hour=8, minute=0）。
+            func: Async callable.
+            trigger: APScheduler trigger instance or string.
+            job_id: Unique job identifier.
+            name: Human-readable job name.
+            replace_existing: Whether to replace an existing job with the same ID.
+            **trigger_kwargs: Passed to the trigger.
 
         Returns:
-            创建的 APScheduler Job 对象。
-
-        Raises:
-            ValueError: 如果 func 不是 async 函数。
+            The created APScheduler Job object.
         """
         if not job_id:
             job_id = name or getattr(func, "__name__", "unnamed_job")
 
-        # APScheduler 3.x quirk: replace_existing does not always work
-        # reliably when the scheduler is not yet started.  Manually
-        # remove a previous job with the same ID first (same approach
-        # as the existing TaskScheduler in app/tasks/scheduler.py).
         if replace_existing:
             try:
                 self._scheduler.remove_job(job_id)
@@ -122,14 +102,7 @@ class SchedulerManager:
         return job
 
     def remove_job(self, job_id: str) -> bool:
-        """删除指定 ID 的任务。
-
-        Args:
-            job_id: 任务唯一标识。
-
-        Returns:
-            True 表示成功删除，False 表示任务不存在。
-        """
+        """Remove a job by ID. Return True if removed."""
         try:
             self._scheduler.remove_job(job_id)
             logger.info("[Scheduler] Job removed: id={}", job_id)
@@ -139,25 +112,14 @@ class SchedulerManager:
             return False
 
     def get_job(self, job_id: str) -> Job | None:
-        """获取指定 ID 的任务详情。
-
-        Args:
-            job_id: 任务唯一标识。
-
-        Returns:
-            Job 对象，不存在则返回 None。
-        """
+        """Get job details by ID."""
         try:
             return self._scheduler.get_job(job_id)
         except Exception:
             return None
 
     def get_jobs(self) -> list[dict[str, Any]]:
-        """获取所有已注册任务的摘要信息。
-
-        Returns:
-            任务摘要列表，每项包含 id, name, next_run, trigger 字段。
-        """
+        """List all registered jobs as summaries."""
         jobs = self._scheduler.get_jobs()
         return [
             {
@@ -171,24 +133,19 @@ class SchedulerManager:
             for job in jobs
         ]
 
-    # ── Properties ────────────────────────────────────────────
+    # -- Properties -------------------------------------------------------------
 
     @property
     def running(self) -> bool:
-        """调度器是否正在运行。"""
         return self._running
 
     @property
     def job_count(self) -> int:
-        """已注册任务数量。"""
         return len(self._scheduler.get_jobs())
 
-    # ── Internal helpers ──────────────────────────────────────
+    # -- Internal helpers -------------------------------------------------------
 
     @staticmethod
     def _describe_trigger(job: Job) -> str:
-        """返回 trigger 的人类可读描述。"""
         trigger = job.trigger
-        if trigger is None:
-            return "none"
-        return str(trigger)
+        return str(trigger) if trigger is not None else "none"

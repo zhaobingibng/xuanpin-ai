@@ -22,6 +22,7 @@ from playwright.async_api import (
 )
 
 from app.config.settings import AppSettings
+from app.config.crawler import crawler_settings
 
 if TYPE_CHECKING:
     from app.crawler.base import CookieManager
@@ -79,26 +80,42 @@ class UserAgentManager:
 # ── Behavior Simulation ─────────────────────────────────────────
 
 
-async def random_delay(min_ms: int = 500, max_ms: int = 2000) -> None:
+async def random_delay(min_ms: int | None = None, max_ms: int | None = None) -> None:
     """随机等待一段时间，模拟人类操作间隔。"""
-    delay = random.randint(min_ms, max_ms)
+    _min = min_ms if min_ms is not None else crawler_settings.random_delay_min_ms
+    _max = max_ms if max_ms is not None else crawler_settings.random_delay_max_ms
+    delay = random.randint(_min, _max)
     await asyncio.sleep(delay / 1000)
 
 
-async def random_scroll(page: Page, times: int = 3) -> None:
+async def random_scroll(page: Page, times: int | None = None) -> None:
     """随机滚动页面，模拟浏览行为。"""
-    for _ in range(times):
-        distance = random.randint(300, 800)
+    _times = times if times is not None else crawler_settings.scroll_times
+    for _ in range(_times):
+        distance = random.randint(
+            crawler_settings.scroll_distance_min,
+            crawler_settings.scroll_distance_max,
+        )
         await page.evaluate(f"window.scrollBy(0, {distance})")
-        await asyncio.sleep(random.uniform(0.3, 1.0))
+        await asyncio.sleep(
+            random.uniform(
+                crawler_settings.scroll_sleep_min_s,
+                crawler_settings.scroll_sleep_max_s,
+            )
+        )
 
 
 async def mouse_move(page: Page) -> None:
     """模拟鼠标随机移动。"""
-    x = random.randint(100, 350)
-    y = random.randint(200, 700)
+    x = random.randint(crawler_settings.mouse_move_x_min, crawler_settings.mouse_move_x_max)
+    y = random.randint(crawler_settings.mouse_move_y_min, crawler_settings.mouse_move_y_max)
     await page.mouse.move(x, y)
-    await asyncio.sleep(random.uniform(0.1, 0.5))
+    await asyncio.sleep(
+        random.uniform(
+            crawler_settings.mouse_move_sleep_min_s,
+            crawler_settings.mouse_move_sleep_max_s,
+        )
+    )
 
 
 # ── BrowserManager ──────────────────────────────────────────────

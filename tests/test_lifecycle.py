@@ -244,6 +244,8 @@ class TestLifecycleAnalyze:
     async def test_analyze_returns_correct_structure(self):
         """analyze() 返回包含 product_id/stage/score/signals 的字典。"""
         mock_session = MagicMock()
+        mock_product = MagicMock(lifecycle_stage="NEW")
+        mock_session.get = AsyncMock(return_value=mock_product)
         analyzer = LifecycleAnalyzer(mock_session)
 
         mock_history = [
@@ -261,6 +263,8 @@ class TestLifecycleAnalyze:
     async def test_analyze_empty_history(self):
         """空历史 → NEW，score=0。"""
         mock_session = MagicMock()
+        mock_product = MagicMock(lifecycle_stage="NEW")
+        mock_session.get = AsyncMock(return_value=mock_product)
         analyzer = LifecycleAnalyzer(mock_session)
 
         with patch.object(analyzer._history_repo, "get_history", new_callable=AsyncMock, return_value=[]):
