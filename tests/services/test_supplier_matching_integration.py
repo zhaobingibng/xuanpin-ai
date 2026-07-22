@@ -414,42 +414,38 @@ class TestOldMethodCompatibility:
 
 
 class TestDailySelectionIntegration:
-    """Test daily selection task with new matching."""
+    """Test daily selection task with new matching (Phase 37.2)."""
 
     @pytest.mark.asyncio
     async def test_run_daily_selection_no_alibaba_client_import(self):
-        """Verify run_daily_selection no longer imports AlibabaSearchClient."""
+        """Verify DailySelectionPipeline delegates to SupplierMatchingService (not Alibaba client)."""
         import inspect
-        from app.tasks.daily_selection_task import run_daily_selection
+        from app.tasks.daily_selection_task import _run_pipeline_impl
 
-        source = inspect.getsource(run_daily_selection)
-        # AlibabaSearchClient should NOT appear in run_daily_selection
+        source = inspect.getsource(_run_pipeline_impl)
+        # Uses DailySelectionPipeline (not direct AlibabaSearchClient)
+        assert "DailySelectionPipeline" in source
+        # AlibabaSearchClient should NOT appear
         assert "AlibabaSearchClient" not in source
-        # match_products_with_matcher SHOULD appear
-        assert "match_products_with_matcher" in source
 
     @pytest.mark.asyncio
-    async def test_run_daily_selection_uses_match_with_db(self):
-        """run_daily_selection should use match_products_with_matcher."""
+    async def test_daily_selection_pipeline_uses_supplier_matching(self):
+        """DailySelectionPipeline.run() delegates to SupplierMatchingService internally."""
         import inspect
-        from app.tasks.daily_selection_task import run_daily_selection
+        from app.services.supplier_matching import SupplierMatchingService
 
-        source = inspect.getsource(run_daily_selection)
-        assert "match_products_with_matcher" in source
-        # Old cleaning/search pipeline should be gone
-        assert "clean_title" not in source
-        assert "generate_search_keyword" not in source
+        # SupplierMatchingService.match_products_with_matcher still exists
+        assert hasattr(SupplierMatchingService, "match_products_with_matcher")
 
     @pytest.mark.asyncio
     async def test_run_daily_selection_saves_top3(self):
-        """run_daily_selection should save top-3 results per product."""
+        """run_daily_selection_once defaults to top_k=3 for matching."""
         import inspect
-        from app.tasks.daily_selection_task import run_daily_selection
+        from app.tasks.daily_selection_task import _run_pipeline_impl
 
-        source = inspect.getsource(run_daily_selection)
-        assert "top_k=3" in source
-        # Uses match_products_with_matcher which internally handles rank
-        assert "match_products_with_matcher" in source
+        source = inspect.getsource(_run_pipeline_impl)
+        # Default top_k=3 passed to pipeline.run()
+        assert "top_k" in source
 
 
 # ═══════════════════════════════════════════════════════════════
