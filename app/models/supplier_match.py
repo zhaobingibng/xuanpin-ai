@@ -48,6 +48,7 @@ class SupplierMatch(Base):
     similarity_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, comment="融合最终评分 [0,1]")
     text_score: Mapped[float | None] = mapped_column(Float, nullable=True, default=None, comment="文本相似度 [0,1]")
     feature_score: Mapped[float | None] = mapped_column(Float, nullable=True, default=None, comment="特征匹配评分 [0,1]")
+    image_score: Mapped[float | None] = mapped_column(Float, nullable=True, default=None, comment="图片相似度 [0,1]")
 
     # 排名
     rank: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None, comment="在当前商品匹配中排名")

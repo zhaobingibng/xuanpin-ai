@@ -1,29 +1,4 @@
-开始 Phase 31：真实商品匹配效果评估。
-
-目标：
-使用真实淘宝商品和supplier_products数据，
-建立匹配准确率评估流程。
-
-要求：
-
-1. 创建真实评估数据格式
-2. 支持人工标注正确supplier_product_id
-3. 调用现有ProductMatcher
-4. 输出：
-
-Top1 Accuracy
-Top3 Accuracy
-Top10 Recall
-平均final_score
-平均利润空间
-
-5. 不修改现有匹配算法。
-
-新增：
-app/matching/evaluation_report.py
-tests/matching/test_evaluation_report.py
-
-保持所有已有测试通过。"""FeatureExtractor — 从中文电商标题中提取结构化特征。
+"""FeatureExtractor — 从中文电商标题中提取结构化特征。
 
 支持提取：核心关键词、重量、包装类型、目标人群。
 """

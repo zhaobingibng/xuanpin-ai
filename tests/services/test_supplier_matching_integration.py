@@ -85,7 +85,7 @@ class TestMatchWithDb:
 
         mock_pm_cls.assert_called_once_with(session)
         mock_pm.match_product.assert_called_once_with(
-            "三只松鼠坚果礼盒装", top_k=3
+            "三只松鼠坚果礼盒装", image=None, top_k=3
         )
         assert len(results) == 1
 
@@ -198,7 +198,7 @@ class TestMatchWithDb:
             results = await service.match_with_db(session, product, top_k=5)
 
         mock_pm.match_product.assert_called_once_with(
-            "三只松鼠坚果礼盒装", top_k=5
+            "三只松鼠坚果礼盒装", image=None, top_k=5
         )
         assert len(results) == 5
 

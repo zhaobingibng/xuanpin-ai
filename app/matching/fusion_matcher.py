@@ -1,7 +1,12 @@
-"""FusionMatcher — 文本+特征融合评分。
+"""FusionMatcher — 文本+特征+图片融合评分。
 
-计算综合评分：
-    final_score = text_score * 0.6 + feature_score * 0.4
+计算综合评分（向后兼容）：
+
+    无 image_score（旧接口）:
+        final_score = text_score * 0.6 + feature_score * 0.4
+
+    有 image_score（新接口）:
+        final_score = text_score * 0.4 + feature_score * 0.3 + image_score * 0.3
 
 其中 feature_score 基于：
 - 关键词重叠 (Jaccard)
@@ -18,14 +23,29 @@ from app.matching.feature_extractor import FeatureExtractor
 
 
 class FusionMatcher:
-    """融合评分器：结合文本相似度和特征相似度。
+    """融合评分器：结合文本相似度、特征相似度和图片相似度。
 
-    权重分配：
-        text_score   * 0.6  (来自 TextMatcher)
-        feature_score * 0.4  (来自特征匹配)
+    权重分配（新版，传入 image_score 时）:
+        text_score    * 0.4  (来自 TextMatcher)
+        feature_score * 0.3  (来自特征匹配)
+        image_score   * 0.3  (来自 ImageMatcher)
+
+    旧版权重（image_score 未传时保持兼容）:
+        text_score    * 0.6
+        feature_score * 0.4
 
     Usage:
         fusion = FusionMatcher()
+
+        # 新接口（含图片分数）
+        result = fusion.calculate(
+            text_score=0.8,
+            query_features=query_feat,
+            candidate_features=cand_feat,
+            image_score=0.9,
+        )
+
+        # 旧接口（仅文本+特征，向后兼容）
         result = fusion.calculate(
             text_score=0.8,
             query_features=query_feat,
@@ -48,6 +68,7 @@ class FusionMatcher:
         text_score: float,
         query_features: dict[str, Any],
         candidate_features: dict[str, Any],
+        image_score: float | None = None,
     ) -> dict[str, float]:
         """Calculate final fused score.
 
@@ -55,21 +76,35 @@ class FusionMatcher:
             text_score: Similarity score from TextMatcher [0, 1].
             query_features: Feature dict for query title.
             candidate_features: Feature dict for candidate title.
+            image_score: Optional image similarity from ImageMatcher [0, 1].
+                When None (default), uses old formula (text*0.6 + feature*0.4).
+                When provided, uses new formula (text*0.4 + feature*0.3 + image*0.3).
 
         Returns:
-            Dict with keys: text_score, feature_score, final_score.
+            Dict with keys: text_score, feature_score, final_score,
+            and image_score (only when provided).
         """
         feature_score = self._calculate_feature_score(
             query_features, candidate_features
         )
 
-        final_score = text_score * 0.6 + feature_score * 0.4
+        if image_score is not None:
+            # New formula: text*0.4 + feature*0.3 + image*0.3
+            final_score = text_score * 0.4 + feature_score * 0.3 + image_score * 0.3
+        else:
+            # Old formula (backward compatible): text*0.6 + feature*0.4
+            final_score = text_score * 0.6 + feature_score * 0.4
 
-        return {
+        result: dict[str, float] = {
             "text_score": round(text_score, 4),
             "feature_score": round(feature_score, 4),
             "final_score": round(final_score, 4),
         }
+
+        if image_score is not None:
+            result["image_score"] = round(image_score, 4)
+
+        return result
 
     def extract_features(self, title: str) -> dict[str, Any]:
         """Extract features from a title.

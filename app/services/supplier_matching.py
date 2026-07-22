@@ -144,6 +144,7 @@ class SupplierMatchingService:
         session: AsyncSession,
         product: Product,
         top_k: int = 3,
+        image: "str | Path | bytes | None" = None,
     ) -> list[dict[str, Any]]:
         """使用 ProductMatcher 从 supplier_products 表匹配。
 
@@ -151,6 +152,8 @@ class SupplierMatchingService:
             session: 异步数据库会话。
             product: 淘宝商品 ORM 实例。
             top_k: 返回 top-k 结果数量。
+            image: 可选查询商品图片，支持 URL/PIL Image/bytes/Path。
+                None → 纯文本匹配。
 
         Returns:
             匹配结果列表，每项包含:
@@ -164,8 +167,10 @@ class SupplierMatchingService:
             - similarity_score: 融合最终评分 [0,1]
             - text_score: 文本相似度 [0,1]
             - feature_score: 特征匹配评分 [0,1]
+            - image_score: 图片相似度 [0,1] 或 None
             - final_score: 融合最终评分 [0,1]（同 similarity_score）
         """
+        from pathlib import Path as _Path
         from app.matching.product_matcher import ProductMatcher
 
         if not product or not product.name:
@@ -173,7 +178,7 @@ class SupplierMatchingService:
             return []
 
         matcher = ProductMatcher(session)
-        results = await matcher.match_product(product.name, top_k=top_k)
+        results = await matcher.match_product(product.name, image=image, top_k=top_k)
         return results
 
     # ── Unified entry (Phase 30) ─────────────────────────────
@@ -183,6 +188,7 @@ class SupplierMatchingService:
         session: AsyncSession,
         product: Product,
         top_k: int = 3,
+        image: "str | Path | bytes | None" = None,
     ) -> list[SupplierMatch]:
         """★ 统一匹配入口 — 匹配 + 利润计算 + 创建 SupplierMatch 记录。
 
@@ -195,6 +201,8 @@ class SupplierMatchingService:
             session: 异步数据库会话。
             product: 淘宝商品 ORM 实例。
             top_k: 匹配结果数量（默认 3）。
+            image: 可选查询商品图片，支持 URL/PIL Image/bytes/Path。
+                None → 纯文本匹配。
 
         Returns:
             SupplierMatch 记录列表（已设置所有字段，未 flush）。
@@ -207,7 +215,9 @@ class SupplierMatchingService:
             await session.commit()
         """
         # Step 1: 调用 ProductMatcher 获取匹配结果
-        raw_results = await self.match_with_db(session, product, top_k=top_k)
+        raw_results = await self.match_with_db(
+            session, product, top_k=top_k, image=image,
+        )
 
         if not raw_results:
             logger.info(
@@ -231,6 +241,7 @@ class SupplierMatchingService:
                 similarity_score=r.get("final_score", 0.0),
                 text_score=r.get("text_score"),
                 feature_score=r.get("feature_score"),
+                image_score=r.get("image_score"),
                 rank=rank,
                 estimated_profit=profit_data["estimated_profit"],
                 profit_margin=profit_data["profit_margin"],
