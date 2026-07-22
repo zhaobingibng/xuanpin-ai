@@ -22,7 +22,7 @@ from app.crawler.models.schemas import RawProduct
 
 T = TypeVar("T")
 
-VALID_PLATFORMS = frozenset({"xiaohongshu", "douyin", "kuaishou"})
+VALID_PLATFORMS = frozenset({"xiaohongshu", "douyin", "kuaishou", "taobao", "1688"})
 
 
 # ── Cookie Manager ────────────────────────────────────────────

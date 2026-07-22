@@ -7,6 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.tasks.jobs import auto_crawl_job, daily_crawl_job, daily_pipeline_job
+from app.tasks.daily_selection_task import daily_selection_job
 
 
 class TaskScheduler:
@@ -160,6 +161,43 @@ class TaskScheduler:
             },
             id=job_id,
             name="Daily pipeline (crawl → clean → save → trend → ranking)",
+            replace_existing=True,
+        )
+
+        logger.info(
+            "Scheduled job '{}': daily at {:02d}:{:02d}",
+            job_id, hour, minute,
+        )
+        return job_id
+
+    def add_daily_selection(
+        self,
+        hour: int = 2,
+        minute: int = 0,
+        job_id: str = "daily_selection",
+    ) -> str:
+        """Schedule the daily product selection task.
+
+        Args:
+            hour: hour to run (24h format, default 02:00)
+            minute: minute to run
+            job_id: unique job identifier
+
+        Returns:
+            The job ID.
+        """
+        trigger = CronTrigger(hour=hour, minute=minute)
+
+        try:
+            self._scheduler.remove_job(job_id)
+        except Exception:
+            pass
+
+        self._scheduler.add_job(
+            daily_selection_job,
+            trigger=trigger,
+            id=job_id,
+            name="Daily selection (crawl -> score -> match -> report)",
             replace_existing=True,
         )
 

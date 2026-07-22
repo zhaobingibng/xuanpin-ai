@@ -20,6 +20,7 @@ class RawProduct:
     favorites: int = 0
     comments: int = 0
     publish_time: str | None = None
+    shop_url: str | None = None  # Phase 16: shop homepage URL for discovery
     crawled_at: datetime = field(default_factory=datetime.now)
 
     def to_db_kwargs(self) -> dict:

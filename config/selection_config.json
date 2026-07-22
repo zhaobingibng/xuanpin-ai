@@ -1,0 +1,18 @@
+{
+  "shops": [
+    {
+      "name": "三只松鼠旗舰店",
+      "platform": "tmall"
+    },
+    {
+      "name": "完美日记旗舰店",
+      "platform": "tmall"
+    },
+    {
+      "name": "花西子旗舰店",
+      "platform": "tmall"
+    }
+  ],
+  "top_count": 10,
+  "min_score": 75
+}

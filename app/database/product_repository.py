@@ -40,6 +40,124 @@ class ProductRepository:
         await self._session.flush()
         return product
 
+    # ── Save Product (with new product detection) ─────────────
+
+    async def save_product(
+        self,
+        *,
+        name: str,
+        platform: str,
+        shop: str,
+        url: str | None = None,
+        image: str | None = None,
+        price: float = 0.0,
+        **kwargs: object,
+    ) -> tuple[Product, bool]:
+        """Save a product with new product detection.
+
+        - If product_url doesn't exist: create new product, mark as NEW
+        - If product_url exists: update last_seen_time
+
+        Returns:
+            (product, is_new) — is_new is True when a new row was created.
+        """
+        now = datetime.now()
+
+        # Check if product exists by URL
+        existing = await self.get_product_by_url(url) if url else None
+
+        if existing is not None:
+            # Update existing product
+            existing.last_seen_time = now
+            existing.price = price
+            if image:
+                existing.image = image
+            await self._session.flush()
+            return existing, False
+
+        # Create new product
+        product = Product(
+            name=name,
+            platform=platform,
+            shop=shop,
+            url=url,
+            image=image,
+            price=price,
+            first_seen_time=now,
+            last_seen_time=now,
+            lifecycle_stage="NEW",
+            **kwargs,
+        )
+        self._session.add(product)
+        await self._session.flush()
+        logger.info("[ProductRepository] New product saved: {}", name[:40])
+        return product, True
+
+    # ── Query Methods ─────────────────────────────────────────
+
+    async def get_product_by_url(self, url: str) -> Product | None:
+        """Get product by URL.
+
+        Args:
+            url: Product URL.
+
+        Returns:
+            Product or None if not found.
+        """
+        if not url:
+            return None
+        stmt = select(Product).where(Product.url == url)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_recent_products(
+        self,
+        days: int = 7,
+        platform: str | None = None,
+        limit: int = 100,
+    ) -> list[Product]:
+        """Get recently seen products.
+
+        Args:
+            days: Number of days to look back.
+            platform: Optional platform filter.
+            limit: Max results.
+
+        Returns:
+            List of products seen within the time range.
+        """
+        cutoff = datetime.now() - timedelta(days=days)
+        stmt = select(Product).where(Product.last_seen_time >= cutoff)
+        if platform:
+            stmt = stmt.where(Product.platform == platform)
+        stmt = stmt.order_by(Product.last_seen_time.desc()).limit(limit)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def find_new_products(
+        self,
+        limit: int = 100,
+        platform: str | None = None,
+    ) -> list[Product]:
+        """Find products marked as NEW (not seen before).
+
+        These are products that have lifecycle_stage='NEW',
+        meaning they were just discovered and haven't been processed.
+
+        Args:
+            limit: Max results.
+            platform: Optional platform filter.
+
+        Returns:
+            List of new products.
+        """
+        stmt = select(Product).where(Product.lifecycle_stage == "NEW")
+        if platform:
+            stmt = stmt.where(Product.platform == platform)
+        stmt = stmt.order_by(Product.first_seen_time.desc()).limit(limit)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     # ── Upsert ────────────────────────────────────────────────
 
     async def upsert(self, **kwargs: object) -> tuple[Product, bool]:

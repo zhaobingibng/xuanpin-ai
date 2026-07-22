@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from loguru import logger
 from sqlalchemy import select, update, delete
@@ -131,3 +131,116 @@ class ShopService:
         await self._session.execute(stmt)
         await self._session.commit()
         return await self._session.get(ShopRegistry, shop_id)
+
+    async def batch_mark_scanned(
+        self, shop_ids: list[int], scan_time: datetime | None = None
+    ) -> int:
+        """批量标记店铺已扫描。返回更新数量。"""
+        if not shop_ids:
+            return 0
+        if scan_time is None:
+            scan_time = datetime.now()
+        stmt = (
+            update(ShopRegistry)
+            .where(ShopRegistry.id.in_(shop_ids))
+            .values(last_scan_at=scan_time)
+        )
+        result = await self._session.execute(stmt)
+        await self._session.commit()
+        logger.info("[ShopService] Batch marked {} shops as scanned", result.rowcount)
+        return result.rowcount
+
+    async def register_or_update(
+        self,
+        platform: str,
+        shop_id: str,
+        shop_name: str,
+        shop_url: str | None = None,
+        category: str | None = None,
+        fans: int = 0,
+        priority: int = 1,
+        enabled: bool = True,
+        monitor_strategy: str = "daily",
+    ) -> ShopRegistry:
+        """Upsert: 如果 platform+shop_id 已存在则更新，否则创建。"""
+        existing = await self.find_by_shop_id(platform, shop_id)
+        if existing:
+            # Update existing
+            existing.shop_name = shop_name
+            if shop_url is not None:
+                existing.shop_url = shop_url
+            if category is not None:
+                existing.category = category
+            if fans:
+                existing.fans = fans
+            existing.priority = priority
+            existing.enabled = enabled
+            existing.monitor_strategy = monitor_strategy
+            await self._session.commit()
+            await self._session.refresh(existing)
+            logger.info("[ShopService] Updated existing shop: platform={}, shop_id={}", platform, shop_id)
+            return existing
+        else:
+            return await self.create_shop(
+                platform=platform,
+                shop_id=shop_id,
+                shop_name=shop_name,
+                shop_url=shop_url,
+                category=category,
+                fans=fans,
+                priority=priority,
+                enabled=enabled,
+                monitor_strategy=monitor_strategy,
+            )
+
+    async def get_shops_needing_scan(
+        self, platform: str | None = None
+    ) -> list[ShopRegistry]:
+        """获取需要扫描的店铺（基于监控策略和上次扫描时间）。"""
+        now = datetime.now()
+        stmt = select(ShopRegistry).where(ShopRegistry.enabled.is_(True))
+        if platform:
+            stmt = stmt.where(ShopRegistry.platform == platform)
+
+        query_result = await self._session.execute(stmt)
+        all_shops = list(query_result.scalars().all())
+
+        needing_scan = []
+        for shop in all_shops:
+            strategy = shop.monitor_strategy
+
+            # manual shops never auto-scan
+            if strategy == "manual":
+                continue
+
+            last_scan = shop.last_scan_at
+
+            if last_scan is None:
+                needing_scan.append(shop)
+                continue
+
+            # Calculate threshold based on strategy
+            if strategy == "hourly":
+                threshold = now - timedelta(hours=1)
+            elif strategy == "daily":
+                threshold = now - timedelta(days=1)
+            else:
+                threshold = now - timedelta(days=1)  # default daily
+
+            if last_scan < threshold:
+                needing_scan.append(shop)
+
+        return needing_scan
+
+    async def get_shop_stats(self) -> dict:
+        """获取店铺统计信息。"""
+        all_shops = await self.list_all_shops()
+        enabled = [s for s in all_shops if s.enabled]
+        by_platform: dict[str, int] = {}
+        for s in all_shops:
+            by_platform[s.platform] = by_platform.get(s.platform, 0) + 1
+        return {
+            "total": len(all_shops),
+            "enabled": len(enabled),
+            "by_platform": by_platform,
+        }

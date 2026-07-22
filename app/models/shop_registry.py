@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
+
+
+class ShopStatus(str, Enum):
+    """Shop status enumeration."""
+
+    ACTIVE = "ACTIVE"      # 活跃，正常采集
+    PAUSED = "PAUSED"      # 暂停，不采集
+    DISABLED = "DISABLED"  # 禁用，永久停止
 
 
 class ShopRegistry(Base):
@@ -40,8 +49,21 @@ class ShopRegistry(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, index=True, comment="是否启用监控"
     )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=ShopStatus.ACTIVE.value,
+        index=True,
+        comment="店铺状态: ACTIVE/PAUSED/DISABLED",
+    )
     last_scan_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, comment="最近一次扫描时间"
+    )
+    last_crawl_time: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="最近一次采集时间"
+    )
+    last_success_time: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="最近一次成功采集时间"
     )
     monitor_strategy: Mapped[str] = mapped_column(
         String(50), nullable=False, default="daily", comment="监控策略 (daily/hourly/manual)"
@@ -53,8 +75,23 @@ class ShopRegistry(Base):
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间"
     )
 
+    @property
+    def is_active(self) -> bool:
+        """Check if shop is active."""
+        return self.status == ShopStatus.ACTIVE.value and self.enabled
+
+    @property
+    def is_paused(self) -> bool:
+        """Check if shop is paused."""
+        return self.status == ShopStatus.PAUSED.value
+
+    @property
+    def is_disabled(self) -> bool:
+        """Check if shop is disabled."""
+        return self.status == ShopStatus.DISABLED.value
+
     def __repr__(self) -> str:
         return (
             f"<ShopRegistry(id={self.id}, platform='{self.platform}', "
-            f"shop_name='{self.shop_name}', enabled={self.enabled})>"
+            f"shop_name='{self.shop_name}', status='{self.status}')>"
         )

@@ -1,0 +1,116 @@
+{
+  "description": "匹配评估测试数据格式。用于 MatchingEvaluator 评估淘宝→1688商品匹配质量。",
+  "version": "1.0",
+
+  "products": [
+    {
+      "id": "taobao_1",
+      "title": "三只松鼠坚果礼盒装年货送礼大礼包",
+      "platform": "tmall",
+      "price": 99.0
+    },
+    {
+      "id": "taobao_2",
+      "title": "海苔卷零食大礼包即食脆50g桶装儿童",
+      "platform": "taobao",
+      "price": 29.9
+    },
+    {
+      "id": "taobao_3",
+      "title": "无线蓝牙耳机降噪运动跑步挂脖式",
+      "platform": "taobao",
+      "price": 59.0
+    },
+    {
+      "id": "taobao_4",
+      "title": "办公室零食小包装混合坚果",
+      "platform": "taobao",
+      "price": 49.9
+    },
+    {
+      "id": "taobao_5",
+      "title": "学生文具套装礼盒装开学必备",
+      "platform": "taobao",
+      "price": 39.0
+    }
+  ],
+
+  "ground_truth": {
+    "taobao_1": "p1",
+    "taobao_2": "p2",
+    "taobao_3": "p3",
+    "taobao_4": "p4",
+    "taobao_5": "p5"
+  },
+
+  "ground_truth_notes": {
+    "taobao_1": "应该匹配 三只松鼠坚果礼盒装2024新款 (同为坚果礼盒类别)",
+    "taobao_2": "应该匹配 海苔卷零食大礼包即食脆 (同为海苔零食)",
+    "taobao_3": "应该匹配 无线蓝牙耳机降噪运动款 (同为蓝牙耳机类别)",
+    "taobao_4": "应该匹配 坚果零食混合大礼包 (同为坚果零食)",
+    "taobao_5": "应该匹配 学生文具礼盒套装 (文具类别)"
+  },
+
+  "supplier_products": [
+    {
+      "id": 1,
+      "supplier_product_id": 1,
+      "offer_id": "p1",
+      "title": "三只松鼠坚果礼盒装2024新款",
+      "price": 89.9,
+      "shop_name": "三只松鼠旗舰店",
+      "url": "https://detail.1688.com/offer/p1.html"
+    },
+    {
+      "id": 2,
+      "supplier_product_id": 2,
+      "offer_id": "p2",
+      "title": "海苔卷零食大礼包即食脆",
+      "price": 29.9,
+      "shop_name": "海味零食铺",
+      "url": "https://detail.1688.com/offer/p2.html"
+    },
+    {
+      "id": 3,
+      "supplier_product_id": 3,
+      "offer_id": "p3",
+      "title": "无线蓝牙耳机降噪运动款",
+      "price": 59.0,
+      "shop_name": "数码科技店",
+      "url": "https://detail.1688.com/offer/p3.html"
+    },
+    {
+      "id": 4,
+      "supplier_product_id": 4,
+      "offer_id": "p4",
+      "title": "坚果零食混合大礼包",
+      "price": 49.9,
+      "shop_name": "零食批发中心",
+      "url": "https://detail.1688.com/offer/p4.html"
+    },
+    {
+      "id": 5,
+      "supplier_product_id": 5,
+      "offer_id": "p5",
+      "title": "学生文具礼盒套装",
+      "price": 35.0,
+      "shop_name": "文具用品店",
+      "url": "https://detail.1688.com/offer/p5.html"
+    }
+  ],
+
+  "usage_example": {
+    "description": "使用 MatchingEvaluator.evaluate_sync() 进行评估",
+    "code": [
+      "from app.matching.evaluator import MatchingEvaluator",
+      "",
+      "evaluator = MatchingEvaluator()",
+      "result = evaluator.evaluate_sync(",
+      "    products=data['products'],",
+      "    ground_truth=data['ground_truth'],",
+      "    results_map=pre_computed_results,",
+      ")",
+      "print(f\"Top3 Accuracy: {result['top3_accuracy']}\")"
+    ]
+  }
+}

@@ -23,13 +23,19 @@ class Product(Base):
     sales_24h: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="24小时销量")
     ai_score: Mapped[float | None] = mapped_column(Float, nullable=True, comment="AI评分")
     category: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="商品分类")
-    url: Mapped[str | None] = mapped_column(Text, nullable=True, comment="商品链接")
+    url: Mapped[str | None] = mapped_column(Text, nullable=True, index=True, comment="商品链接")
     lifecycle_stage: Mapped[str] = mapped_column(
         String(20), nullable=False, default="NEW", server_default="NEW", comment="生命周期阶段"
     )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="ACTIVE", server_default="ACTIVE",
         index=True, comment="商品状态: ACTIVE/ARCHIVED"
+    )
+    first_seen_time: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="首次发现时间"
+    )
+    last_seen_time: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="最近发现时间"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), comment="创建时间"

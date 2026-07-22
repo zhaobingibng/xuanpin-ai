@@ -189,8 +189,9 @@ class TestDailyCrawlJob:
         assert result["raw_count"] == 0
 
     def test_platform_crawlers_mapping(self):
-        """PLATFORM_CRAWLERS should have all 3 platforms."""
+        """PLATFORM_CRAWLERS should have all 4 platforms."""
         assert "xiaohongshu" in PLATFORM_CRAWLERS
         assert "douyin" in PLATFORM_CRAWLERS
         assert "kuaishou" in PLATFORM_CRAWLERS
-        assert len(PLATFORM_CRAWLERS) == 3
+        assert "taobao" in PLATFORM_CRAWLERS
+        assert len(PLATFORM_CRAWLERS) == 4

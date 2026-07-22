@@ -7,7 +7,7 @@ from datetime import datetime
 from loguru import logger
 
 from app.ai.analyzer import ProductAnalyzer
-from app.crawler import CrawlerManager, DouyinCrawler, KuaishouCrawler, XiaohongshuCrawler
+from app.crawler import CrawlerManager, DouyinCrawler, KuaishouCrawler, TaobaoCrawler, XiaohongshuCrawler
 from app.crawler.models.schemas import RawProduct
 from app.services.cleaner.pipeline import ProductCleanPipeline
 
@@ -16,6 +16,7 @@ PLATFORM_CRAWLERS = {
     "xiaohongshu": XiaohongshuCrawler,
     "douyin": DouyinCrawler,
     "kuaishou": KuaishouCrawler,
+    "taobao": TaobaoCrawler,
 }
 
 
@@ -412,6 +413,171 @@ async def daily_crawl_job(
             error_msg = f"Archive error: {e}"
             logger.error("[Job:{}] {}", job_id, error_msg)
             result["errors"].append(error_msg)
+
+    # ── Step 11b: Shop scan — crawl registered shops (Phase 15) ──
+    if save_to_db and "taobao" in platforms:
+        logger.info("[Job:{}] Step 11b: Shop scan (registered taobao shops)…", job_id)
+        try:
+            from app.database.base import get_async_session_factory
+            from app.services.shop_service import ShopService
+
+            session_factory = get_async_session_factory()
+            async with session_factory() as session:
+                shop_svc = ShopService(session)
+                shops = await shop_svc.get_shops_needing_scan(platform="taobao")
+                scanned_ids: list[int] = []
+                shop_product_count = 0
+
+                if shops:
+                    crawler = TaobaoCrawler()
+                    try:
+                        for shop in shops:
+                            shop_url = shop.shop_url or f"https://shop{shop.shop_id}.taobao.com"
+                            try:
+                                prods = await crawler.crawl_shop(
+                                    shop_url=shop_url,
+                                    shop_name=shop.shop_name,
+                                    max_pages=2,
+                                    limit=30,
+                                )
+                                shop_product_count += len(prods)
+                                all_raw.extend(prods)
+                                scanned_ids.append(shop.id)
+                                logger.info(
+                                    "[Job:{}] Shop '{}': {} products",
+                                    job_id, shop.shop_name, len(prods),
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    "[Job:{}] Shop '{}' crawl error: {}",
+                                    job_id, shop.shop_name, e,
+                                )
+                    finally:
+                        await crawler.close()
+
+                    if scanned_ids:
+                        await shop_svc.batch_mark_scanned(scanned_ids)
+
+                result["shops_crawled"] = len(scanned_ids)
+                result["shop_products"] = shop_product_count
+                logger.info(
+                    "[Job:{}] Shop scan complete: {}/{} shops, {} products",
+                    job_id, len(scanned_ids), len(shops), shop_product_count,
+                )
+        except Exception as e:
+            logger.debug("[Job:{}] Shop scan error: {}", job_id, e)
+
+    # ── Step 11c: Shop discovery — auto-discover high-value shops (Phase 15) ──
+    if save_to_db and "taobao" in platforms and all_raw:
+        logger.info("[Job:{}] Step 11c: Shop discovery (auto-discover high-value shops)…", job_id)
+        try:
+            from app.database.base import get_async_session_factory
+            from app.services.discovery.shop_discovery import ShopDiscoveryService
+
+            session_factory = get_async_session_factory()
+            async with session_factory() as session:
+                discovery = ShopDiscoveryService(session)
+                scored_shops = await discovery.discover_from_products(
+                    all_raw, auto_register=True, min_score=40.0
+                )
+                result["shops_discovered"] = len(scored_shops)
+                if scored_shops:
+                    result["top_discovered_shops"] = [
+                        {"name": s.shop_name, "score": s.score, "products": s.stats.product_count}
+                        for s in scored_shops[:5]
+                    ]
+                logger.info(
+                    "[Job:{}] Shop discovery: {} shops scored",
+                    job_id, len(scored_shops),
+                )
+        except Exception as e:
+            logger.debug("[Job:{}] Shop discovery error: {}", job_id, e)
+
+    # ── Step 12: New product detection (Phase 14) ─────────────
+    if save_to_db:
+        logger.info("[Job:{}] Step 12: New product detection…", job_id)
+        try:
+            from app.database.base import get_async_session_factory
+            from app.services.discovery.new_product_detector import NewProductDetector
+
+            session_factory = get_async_session_factory()
+            async with session_factory() as session:
+                detector = NewProductDetector(session)
+                detection = await detector.detect_all_enabled_shops(platform="taobao")
+                result["new_products_detected"] = detection["total_new_products"]
+                result["shops_scanned"] = detection["total_shops"]
+                logger.info(
+                    "[Job:{}] New products: {} from {} shops",
+                    job_id, detection["total_new_products"], detection["total_shops"],
+                )
+        except Exception as e:
+            # 新品检测失败不影响其他步骤
+            logger.debug("[Job:{}] New product detection error: {}", job_id, e)
+
+    # ── Step 13: Supply chain matching (Phase 14) ─────────────
+    if save_to_db:
+        logger.info("[Job:{}] Step 13: Supply chain matching…", job_id)
+        try:
+            from sqlalchemy import select
+            from app.database.base import get_async_session_factory
+            from app.models.product import Product
+            from app.services.supply_chain.matcher import SupplyChainMatcher
+
+            session_factory = get_async_session_factory()
+            async with session_factory() as session:
+                # 获取 TOP 5 淘宝商品（按 ai_score 排序）
+                stmt = (
+                    select(Product)
+                    .where(Product.platform == "taobao", Product.status == "ACTIVE")
+                    .order_by(Product.ai_score.desc())
+                    .limit(5)
+                )
+                query_result = await session.execute(stmt)
+                taobao_products = list(query_result.scalars().all())
+
+                if taobao_products:
+                    matcher = SupplyChainMatcher(session)
+                    matches = await matcher.match_batch(taobao_products)
+                    result["supply_chain_matches"] = [
+                        {
+                            "product_id": m.product_id,
+                            "match_score": m.match_score,
+                            "profit_margin": m.profit_margin,
+                            "profit_amount": m.profit_amount,
+                        }
+                        for m in matches
+                    ]
+                    logger.info(
+                        "[Job:{}] Supply chain: {}/{} matched",
+                        job_id, len(matches), len(taobao_products),
+                    )
+        except Exception as e:
+            # 供应链匹配失败不影响其他步骤
+            logger.debug("[Job:{}] Supply chain matching error: {}", job_id, e)
+
+    # ── Step 14: Daily selection report (Phase 16) ────────────
+    if save_to_db:
+        logger.info("[Job:{}] Step 14: Daily selection report…", job_id)
+        try:
+            from app.database.base import get_async_session_factory
+            from app.services.report.daily_selection_report import DailySelectionReportService
+
+            session_factory = get_async_session_factory()
+            async with session_factory() as session:
+                report_svc = DailySelectionReportService(session)
+                daily_report = await report_svc.generate(limit=20)
+                result["daily_report_summary"] = daily_report["summary"]
+                result["daily_report_date"] = daily_report["date"]
+                logger.info(
+                    "[Job:{}] Daily report: {} new products, {} matches, avg margin {:.1f}%",
+                    job_id,
+                    daily_report["summary"]["new_products_count"],
+                    daily_report["summary"]["matched_count"],
+                    daily_report["summary"]["avg_profit_margin"],
+                )
+        except Exception as e:
+            # 日报生成失败不影响其他步骤
+            logger.debug("[Job:{}] Daily selection report error: {}", job_id, e)
 
     # ── Update status: SUCCESS / FAILED ───────────────────────
     if status_id is not None:
