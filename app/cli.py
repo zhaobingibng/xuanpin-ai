@@ -589,6 +589,16 @@ async def cmd_daily(args: argparse.Namespace) -> None:
                 )
             ).scalar() or 0
 
+            # 高分商品（累计评分 >= 75）
+            high_score_total = (
+                await session.execute(
+                    select(sa_func.count(Product.id)).where(
+                        Product.status == "ACTIVE",
+                        Product.ai_score >= 75,
+                    )
+                )
+            ).scalar() or 0
+
             # 供应链匹配
             match_count = (
                 await session.execute(select(sa_func.count(SupplierMatch.id)))
@@ -603,12 +613,14 @@ async def cmd_daily(args: argparse.Namespace) -> None:
         console.print("=" * 24)
         console.print("[bold]今日商品资产[/]")
         console.print()
+        console.print(f"今日采集：{collect_count}")
         console.print(f"新增商品：{new_today}")
         console.print(f"累计商品：{total_products}")
+        console.print(f"高分商品：{high_score_total}")
         console.print(f"新增重点商品：{new_key_today}")
         console.print(f"累计关注商品：{watching_count}")
         console.print(f"累计店铺：{total_shops}")
-        console.print(f"累计供应链：{match_count}")
+        console.print(f"供应链匹配：{match_count}")
         console.print()
         console.print("=" * 24)
     except Exception as e:
