@@ -208,12 +208,12 @@ async def daily_crawl_job(
                 result["history_count"] = save_result["history_count"]
                 result["failed_save_count"] = save_result["failed_count"]
 
-                # Step 4b: Save ai_score + ProductScore for each saved product
+                # Step 4b: Create ProductScore detail record for each saved product
+                # (ai_score 已在 save_raw_products 中集中写入，此处不再重复写入)
                 scoring_svc = ProductScoringService()
                 scored_count = 0
                 for product in save_result.get("saved_products", []):
                     score_record = scoring_svc.create_score_record(product)
-                    product.ai_score = score_record.total_score
                     session.add(score_record)
                     scored_count += 1
                 await session.commit()

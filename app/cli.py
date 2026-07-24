@@ -323,8 +323,8 @@ async def cmd_daily(args: argparse.Namespace) -> None:
                 from app.services.product_scoring import ProductScoringService
                 scoring_svc = ProductScoringService()
                 for product in save_result.get("saved_products", []):
+                    # ai_score 已在 save_raw_products 中集中写入，此处仅创建 ProductScore 明细记录
                     score_record = scoring_svc.create_score_record(product)
-                    product.ai_score = score_record.total_score
                     session.add(score_record)
                 await session.commit()
                 for product in save_result.get("saved_products", []):

@@ -13,6 +13,7 @@ from app.database.history_repository import HistoryRepository
 from app.database.product_repository import ProductRepository
 from app.models.product import Product
 from app.services.cleaner.pipeline import ProductCleanPipeline
+from app.services.product_scoring import ProductScoringService
 
 
 class ProductService:
@@ -23,6 +24,7 @@ class ProductService:
         self._repo = ProductRepository(session)
         self._history_repo = HistoryRepository(session)
         self._pipeline = ProductCleanPipeline()
+        self._scoring = ProductScoringService()
 
     # ── Ingestion ─────────────────────────────────────────────
 
@@ -69,6 +71,9 @@ class ProductService:
             try:
                 kwargs = item.to_db_kwargs()
                 product, is_new = await self._repo.upsert(**kwargs)
+                # 集中化写入 AI 评分：复用 ProductScoringService，确保所有采集入库路径
+                # 都持久化 Product.ai_score（此前仅个别 caller 手动写入，导致大量商品为空）。
+                product.ai_score = self._scoring.calculate_score(product)["total_score"]
                 if is_new:
                     new_count += 1
                 else:
