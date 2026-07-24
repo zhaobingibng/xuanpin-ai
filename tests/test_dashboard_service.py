@@ -148,3 +148,67 @@ class TestDistribution:
         assert dist["美妆"] == 2
         assert dist["食品"] == 1
         assert None not in dist
+
+
+# ── Home summary (Phase 53) ──────────────────────────
+
+
+class TestHomeSummary:
+    """home_summary 首页概览验证。"""
+
+    @pytest.mark.anyio
+    async def test_home_summary_empty_db(self, session):
+        """空库 → 计数为 0，列表为空，last_task 为 None。"""
+        svc = DashboardService(session)
+        home = await svc.home_summary()
+
+        assert home["today_overview"]["today_crawl"] == 0
+        assert home["today_overview"]["total_products"] == 0
+        assert home["today_overview"]["high_score_count"] == 0
+        assert home["today_overview"]["supplier_match_count"] == 0
+        assert home["last_task"] is None
+        assert home["top_high_score_products"] == []
+        assert home["recent_supplier_matches"] == []
+
+    @pytest.mark.anyio
+    async def test_home_summary_high_score(self, session):
+        """高分商品计数与列表按 ai_score 倒序。"""
+        session.add(Product(
+            name="高分A", platform="taobao", shop="旗舰店", price=99.0, ai_score=90.0,
+        ))
+        session.add(Product(
+            name="高分B", platform="taobao", shop="旗舰店", price=99.0, ai_score=80.0,
+        ))
+        session.add(Product(
+            name="低分C", platform="taobao", shop="小店", price=99.0, ai_score=50.0,
+        ))
+        await session.commit()
+
+        svc = DashboardService(session)
+        home = await svc.home_summary()
+        assert home["today_overview"]["high_score_count"] == 2
+        names = [p["name"] for p in home["top_high_score_products"]]
+        assert names == ["高分A", "高分B"]
+
+    @pytest.mark.anyio
+    async def test_home_summary_supplier_matches(self, session):
+        """供应链匹配计数与商品名 JOIN。"""
+        from app.models.supplier_match import SupplierMatch
+
+        product = Product(name="商品X", platform="taobao", shop="s", price=99.0)
+        session.add(product)
+        await session.flush()
+        session.add(SupplierMatch(
+            product_id=product.id, supplier_title="1688供应商Y",
+            supplier_price=30.0, similarity_score=0.8,
+        ))
+        await session.commit()
+
+        svc = DashboardService(session)
+        home = await svc.home_summary()
+        assert home["today_overview"]["supplier_match_count"] == 1
+        matches = home["recent_supplier_matches"]
+        assert len(matches) == 1
+        assert matches[0]["product_name"] == "商品X"
+        assert matches[0]["supplier_title"] == "1688供应商Y"
+

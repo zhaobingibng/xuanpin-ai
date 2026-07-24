@@ -16,10 +16,14 @@ from app.database.report_repository import ReportRepository
 from app.database.task_execution_repository import TaskExecutionRepository
 from app.models.daily_report import DailyReport
 from app.models.product import Product
+from app.models.supplier_match import SupplierMatch
 
 
 # Global notification history (shared with NotificationService)
 _notification_history: list[dict] = []
+
+# 高分商品阈值（与 CLI / daily_selection_analyzer 保持一致）
+HIGH_SCORE_THRESHOLD = 75
 
 
 class DashboardService:
@@ -69,6 +73,26 @@ class DashboardService:
             "category_distribution": category_dist,
         }
 
+    async def home_summary(self, limit: int = 10) -> dict[str, Any]:
+        """返回首页运行概览数据（纯只读，复用现有查询）。
+
+        Returns:
+            包含 today_overview, last_task, top_high_score_products,
+            recent_supplier_matches 四段展示数据的字典。
+        """
+        today_overview = {
+            "today_crawl": await self._count_today_crawl(),
+            "total_products": await self._count_products(),
+            "high_score_count": await self._count_high_score(),
+            "supplier_match_count": await self._count_supplier_matches(),
+        }
+        return {
+            "today_overview": today_overview,
+            "last_task": await self._last_task(),
+            "top_high_score_products": await self._top_high_score_products(limit),
+            "recent_supplier_matches": await self._recent_supplier_matches(limit),
+        }
+
     # ── Helpers ───────────────────────────────────────────────
 
     async def _count_products(self) -> int:
@@ -83,6 +107,68 @@ class DashboardService:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one()
+
+    async def _count_high_score(self) -> int:
+        stmt = select(func.count(Product.id)).where(
+            Product.ai_score >= HIGH_SCORE_THRESHOLD
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one()
+
+    async def _count_supplier_matches(self) -> int:
+        stmt = select(func.count(SupplierMatch.id))
+        result = await self._session.execute(stmt)
+        return result.scalar_one()
+
+    async def _last_task(self) -> dict[str, Any] | None:
+        tasks = await self._task_repo.get_recent(limit=1)
+        if not tasks:
+            return None
+        t = tasks[0]
+        return {
+            "task_name": t.task_name,
+            "start_time": t.start_time.isoformat() if t.start_time else None,
+            "end_time": t.end_time.isoformat() if t.end_time else None,
+            "status": t.status,
+            "duration": t.duration,
+        }
+
+    async def _top_high_score_products(self, limit: int) -> list[dict[str, Any]]:
+        stmt = (
+            select(Product)
+            .where(Product.ai_score >= HIGH_SCORE_THRESHOLD)
+            .order_by(Product.ai_score.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [
+            {
+                "id": p.id,
+                "name": p.name,
+                "ai_score": p.ai_score,
+                "shop": p.shop,
+                "platform": p.platform,
+            }
+            for p in result.scalars().all()
+        ]
+
+    async def _recent_supplier_matches(self, limit: int) -> list[dict[str, Any]]:
+        stmt = (
+            select(SupplierMatch, Product.name)
+            .join(Product, SupplierMatch.product_id == Product.id)
+            .order_by(SupplierMatch.created_time.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [
+            {
+                "product_id": sm.product_id,
+                "product_name": product_name,
+                "supplier_title": sm.supplier_title,
+                "created_time": sm.created_time.isoformat() if sm.created_time else None,
+            }
+            for sm, product_name in result.all()
+        ]
 
     async def _count_lifecycle(self, stage: str) -> int:
         stmt = select(func.count(Product.id)).where(

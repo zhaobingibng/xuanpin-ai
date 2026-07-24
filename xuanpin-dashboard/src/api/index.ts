@@ -75,6 +75,48 @@ export function getWorkbenchOverview() {
   return api.get<DashboardOverview>('/dashboard/overview')
 }
 
+// ── 首页运行概览 (Phase 53) ─────────────────────────
+export interface DashboardHomeTodayOverview {
+  today_crawl: number
+  total_products: number
+  high_score_count: number
+  supplier_match_count: number
+}
+
+export interface DashboardHomeLastTask {
+  task_name: string
+  start_time: string | null
+  end_time: string | null
+  status: string
+  duration: number | null
+}
+
+export interface DashboardHomeProduct {
+  id: number
+  name: string
+  ai_score: number | null
+  shop: string
+  platform: string
+}
+
+export interface DashboardHomeMatch {
+  product_id: number
+  product_name: string
+  supplier_title: string
+  created_time: string | null
+}
+
+export interface DashboardHome {
+  today_overview: DashboardHomeTodayOverview
+  last_task: DashboardHomeLastTask | null
+  top_high_score_products: DashboardHomeProduct[]
+  recent_supplier_matches: DashboardHomeMatch[]
+}
+
+export function getDashboardHome(limit = 10) {
+  return api.get<DashboardHome>('/dashboard/home', { params: { limit } })
+}
+
 export function getReviewAccuracy() {
   return api.get<ReviewAccuracy>('/reviews/accuracy')
 }

@@ -32,6 +32,18 @@ async def dashboard_overview() -> dict:
         raise HTTPException(status_code=500, detail="获取系统总览失败")
 
 
+@router.get("/dashboard/home")
+async def dashboard_home(limit: int = Query(default=10, ge=1, le=50)) -> dict:
+    """首页运行概览（今日概览/最近一次任务/高分商品/供应链匹配）。"""
+    try:
+        async_session_factory = get_async_session_factory()
+        async with async_session_factory() as session:
+            svc = DashboardService(session)
+            return await svc.home_summary(limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取首页概览失败: {e}")
+
+
 @router.get("/dashboard/system")
 async def dashboard_system() -> dict:
     """系统运维总览数据（健康状态、任务统计、爬虫/调度器状态）。"""

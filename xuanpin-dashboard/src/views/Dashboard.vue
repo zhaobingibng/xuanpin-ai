@@ -26,6 +26,100 @@
       </div>
     </el-card>
 
+   <!-- Phase 53: 首页运行概览 -->
+    <el-row :gutter="20" class="overview-row">
+      <el-col :span="6">
+        <el-card class="metric-card" shadow="hover">
+          <div class="metric-label">今日采集</div>
+          <div class="metric-value">{{ home?.today_overview.today_crawl ?? '-' }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card class="metric-card" shadow="hover">
+          <div class="metric-label">累计商品</div>
+          <div class="metric-value">{{ home?.today_overview.total_products ?? '-' }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card class="metric-card" shadow="hover">
+          <div class="metric-label">高分商品</div>
+          <div class="metric-value">{{ home?.today_overview.high_score_count ?? '-' }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card class="metric-card" shadow="hover">
+          <div class="metric-label">供应链匹配</div>
+          <div class="metric-value">{{ home?.today_overview.supplier_match_count ?? '-' }}</div>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="20" class="overview-row">
+      <el-col :span="10">
+        <el-card class="panel-card" shadow="never">
+          <template #header><span>最近一次任务</span></template>
+          <div v-if="home?.last_task" class="last-task">
+            <p><span class="lt-label">任务</span>{{ home.last_task.task_name }}</p>
+            <p>
+              <span class="lt-label">状态</span>
+              <el-tag :type="home.last_task.status === 'SUCCESS' ? 'success' : (home.last_task.status === 'FAILED' ? 'danger' : 'info')" size="small">
+                {{ home.last_task.status }}
+              </el-tag>
+            </p>
+            <p><span class="lt-label">运行时间</span>{{ formatDateTime(home.last_task.start_time) }}</p>
+            <p v-if="home.last_task.duration !== null">
+              <span class="lt-label">耗时</span>{{ home.last_task.duration?.toFixed(1) }}s
+            </p>
+          </div>
+          <el-empty v-else description="暂无任务记录" :image-size="60" />
+        </el-card>
+      </el-col>
+      <el-col :span="14">
+        <el-card class="panel-card" shadow="never">
+          <template #header><span>最新高分商品</span></template>
+          <el-table
+            v-if="home?.top_high_score_products.length"
+            :data="home.top_high_score_products"
+            size="small"
+            style="width: 100%"
+          >
+            <el-table-column prop="name" label="商品名称" show-overflow-tooltip />
+            <el-table-column prop="ai_score" label="AI Score" width="90">
+              <template #default="{ row }">
+                <strong>{{ row.ai_score?.toFixed(1) ?? '-' }}</strong>
+              </template>
+            </el-table-column>
+            <el-table-column prop="shop" label="店铺" width="120" show-overflow-tooltip />
+            <el-table-column prop="platform" label="平台" width="90" />
+          </el-table>
+          <el-empty v-else description="暂无高分商品" :image-size="60" />
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="20" class="overview-row">
+      <el-col :span="24">
+        <el-card class="panel-card" shadow="never">
+          <template #header><span>最新供应链匹配</span></template>
+          <el-table
+            v-if="home?.recent_supplier_matches.length"
+            :data="home.recent_supplier_matches"
+            size="small"
+            style="width: 100%"
+          >
+            <el-table-column prop="product_name" label="商品名称" show-overflow-tooltip />
+            <el-table-column prop="supplier_title" label="供应商" show-overflow-tooltip />
+            <el-table-column prop="created_time" label="匹配时间" width="180">
+              <template #default="{ row }">
+                {{ formatDateTime(row.created_time) }}
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else description="暂无供应链匹配" :image-size="60" />
+        </el-card>
+      </el-col>
+    </el-row>
+
     <el-row :gutter="20" class="chart-row">
       <el-col :span="12">
         <CategoryChart />
@@ -247,7 +341,9 @@ import {
   checkTaobaoSession,
   crawlTaobao,
   waitHumanTaobao,
+  getDashboardHome,
   type TaobaoStatus,
+  type DashboardHome,
 } from '@/api'
 import TopRankingTable from '@/components/TopRankingTable.vue'
 import CategoryChart from '@/components/CategoryChart.vue'
@@ -264,6 +360,24 @@ const loading = ref(true)
 const health = ref<HealthInfo | null>(null)
 const selectionEnabled = ref(false)
 const selectionToggling = ref(false)
+
+// ── 首页运行概览 (Phase 53) ─────────────────
+const home = ref<DashboardHome | null>(null)
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  return d.toLocaleString('zh-CN', { hour12: false })
+}
+
+async function fetchHome() {
+  try {
+    const { data } = await getDashboardHome(10)
+    home.value = data
+  } catch {
+    // ignore — 首页概览不可用时不阻断其他区块
+  }
+}
 
 // ── 淘宝操控台 (Phase 42.6) ──────────────────────────
 const taobaoLoading = ref(true)
@@ -430,6 +544,8 @@ onMounted(async () => {
   }
   // Fetch taobao status
   fetchTaobaoStatus()
+  // Fetch home overview (Phase 53)
+  fetchHome()
 })
 
 async function handleSelectionToggle(val: boolean) {
@@ -453,6 +569,43 @@ async function handleSelectionToggle(val: boolean) {
 
 .status-card {
   margin-top: 20px;
+}
+
+/* Phase 53: 首页运行概览 */
+.overview-row {
+  margin-top: 20px;
+}
+
+.metric-card {
+  text-align: center;
+}
+
+.metric-label {
+  font-size: 14px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+
+.metric-value {
+  font-size: 28px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.panel-card {
+  height: 100%;
+}
+
+.last-task p {
+  margin: 6px 0;
+  font-size: 14px;
+  color: #303133;
+}
+
+.lt-label {
+  display: inline-block;
+  width: 68px;
+  color: #909399;
 }
 
 .chart-row {
