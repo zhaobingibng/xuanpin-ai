@@ -156,6 +156,7 @@ def _raw(**overrides) -> RawProduct:
         "price": 99.9,
         "viewers": 1200,
         "sales_24h": 350,
+        "image": "https://img.example.com/p.jpg",
         "url": "https://xhslink.com/p/1",
     }
     defaults.update(overrides)
@@ -289,8 +290,8 @@ class TestSaveRawProducts:
         """Two separate save calls with same URL → one record in DB."""
         svc = ProductService(async_session)
 
-        await svc.save_raw_products([_raw(name="商品A", price=10.0, url="https://xhslink.com/same")])
-        await svc.save_raw_products([_raw(name="商品B", price=20.0, url="https://xhslink.com/same")])
+        await svc.save_raw_products([_raw(name="蓝牙耳机A", price=10.0, url="https://xhslink.com/same")])
+        await svc.save_raw_products([_raw(name="蓝牙耳机B", price=20.0, url="https://xhslink.com/same")])
 
         all_products = await svc.list_all()
         assert len(all_products) == 1
@@ -308,3 +309,54 @@ class TestSaveRawProducts:
         assert count["saved_count"] == 2
         all_products = await svc.list_all()
         assert len(all_products) == 2
+
+
+# ── Quality Filter (Phase 57 Lite) ───────────────────────────
+
+
+class TestQualityFilter:
+    """入库前质量过滤：空标题/短标题/无图片/价格<=0/价格>10000 被剔除，
+    url 可选、name+platform 去重与正常商品不受影响。"""
+
+    async def test_empty_title_filtered(self, async_session):
+        svc = ProductService(async_session)
+        count = await svc.save_raw_products([_raw(name="   ")])
+        assert count["saved_count"] == 0
+        assert len(await svc.list_all()) == 0
+
+    async def test_short_title_filtered(self, async_session):
+        svc = ProductService(async_session)
+        count = await svc.save_raw_products([_raw(name="耳机")])  # 2 字 < 4
+        assert count["saved_count"] == 0
+        assert len(await svc.list_all()) == 0
+
+    async def test_no_image_filtered(self, async_session):
+        svc = ProductService(async_session)
+        count = await svc.save_raw_products([_raw(image=None)])
+        assert count["saved_count"] == 0
+        assert len(await svc.list_all()) == 0
+
+    async def test_price_non_positive_filtered(self, async_session):
+        svc = ProductService(async_session)
+        count = await svc.save_raw_products([_raw(price=0)])
+        assert count["saved_count"] == 0
+        assert len(await svc.list_all()) == 0
+
+    async def test_price_too_high_filtered(self, async_session):
+        svc = ProductService(async_session)
+        count = await svc.save_raw_products([_raw(price=10001)])  # > 10000
+        assert count["saved_count"] == 0
+        assert len(await svc.list_all()) == 0
+
+    async def test_url_empty_but_name_platform_saved(self, async_session):
+        svc = ProductService(async_session)
+        count = await svc.save_raw_products([_raw(name="保温水杯", url=None)])
+        assert count["saved_count"] == 1
+        assert len(await svc.list_all()) == 1
+
+    async def test_normal_product_saved(self, async_session):
+        svc = ProductService(async_session)
+        count = await svc.save_raw_products([_raw()])
+        assert count["saved_count"] == 1
+        assert count["quality_filtered"] == 0
+        assert len(await svc.list_all()) == 1

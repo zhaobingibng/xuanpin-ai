@@ -12,8 +12,12 @@ from app.crawler.models.schemas import RawProduct
 from app.database.history_repository import HistoryRepository
 from app.database.product_repository import ProductRepository
 from app.models.product import Product
-from app.services.cleaner.pipeline import ProductCleanPipeline
+from app.services.cleaner.pipeline import CleanedProduct, ProductCleanPipeline
 from app.services.product_scoring import ProductScoringService
+
+# ── 质量过滤阈值 ────────────────────────────────────
+MIN_NAME_LENGTH = 4  # 标题少于该长度视为无效
+MAX_REASONABLE_PRICE = 10_000.0  # 价格超过该值（元）视为异常
 
 
 class ProductService:
@@ -47,7 +51,7 @@ class ProductService:
         empty_result: dict[str, Any] = {
             "total": total, "cleaned_count": 0, "saved_count": 0,
             "new_count": 0, "updated_count": 0, "history_count": 0,
-            "failed_count": 0, "saved_products": [],
+            "failed_count": 0, "quality_filtered": 0, "saved_products": [],
         }
         if total == 0:
             return empty_result
@@ -60,6 +64,25 @@ class ProductService:
         if cleaned_count == 0:
             return empty_result
 
+        # Step 1.5: 质量过滤 — 在评分与入库前统一剔除低质商品。
+        passed: list[CleanedProduct] = []
+        quality_filtered = 0
+        for item in cleaned:
+            reason = self._quality_reason(item)
+            if reason is not None:
+                quality_filtered += 1
+                logger.debug("质量过滤丢弃: {} ({})", item.name, reason)
+                continue
+            passed.append(item)
+        logger.info(
+            "质量过滤: 清洗后={}, 过滤={}, 通过={}",
+            cleaned_count, quality_filtered, len(passed),
+        )
+
+        if not passed:
+            return {**empty_result, "cleaned_count": cleaned_count,
+                    "quality_filtered": quality_filtered}
+
         # Step 2: upsert each cleaned product + history snapshot
         new_count = 0
         updated_count = 0
@@ -67,7 +90,7 @@ class ProductService:
         history_count = 0
         saved_products: list[Product] = []
 
-        for item in cleaned:
+        for item in passed:
             try:
                 kwargs = item.to_db_kwargs()
                 product, is_new = await self._repo.upsert(**kwargs)
@@ -99,13 +122,18 @@ class ProductService:
             return {
                 "total": total, "cleaned_count": cleaned_count, "saved_count": 0,
                 "new_count": 0, "updated_count": 0, "history_count": 0,
-                "failed_count": cleaned_count, "saved_products": [],
+                "failed_count": cleaned_count, "quality_filtered": quality_filtered,
+                "saved_products": [],
             }
 
         saved_count = new_count + updated_count
         logger.info(
             "保存完成: 新增={}, 更新={}, 历史={}, 失败={}",
             new_count, updated_count, history_count, failed_count,
+        )
+        logger.info(
+            "采集入库汇总: 采集={}, 过滤={}, 入库={}",
+            total, total - saved_count, saved_count,
         )
         return {
             "total": total,
@@ -115,10 +143,32 @@ class ProductService:
             "updated_count": updated_count,
             "history_count": history_count,
             "failed_count": failed_count,
+            "quality_filtered": quality_filtered,
             "saved_products": saved_products,
         }
 
-    # ── Create ────────────────────────────────────────────────
+    # ── Quality filter ───────────────────────────────────────
+
+    def _quality_reason(self, item: CleanedProduct) -> str | None:
+        """检查单个清洗后商品的质量，返回不合格原因；合格返回 None。
+
+        固定的简单规则（无规则引擎/无插件），在评分与入库前统一过滤：
+        - 标题为空 / 标题过短 / 图片为空 / 价格<=0 / 价格异常
+        """
+        name = (item.name or "").strip()
+        if not name:
+            return "标题为空"
+        if len(name) < MIN_NAME_LENGTH:
+            return "标题过短"
+        if not (item.image or "").strip():
+            return "图片为空"
+        if item.price is None or item.price <= 0:
+            return "价格异常(<=0)"
+        if item.price > MAX_REASONABLE_PRICE:
+            return "价格异常(过高)"
+        return None
+
+    # ── Create ──────────────────────────────────
 
     async def create(self, **kwargs) -> Product:
         """Add a new product and return it."""
